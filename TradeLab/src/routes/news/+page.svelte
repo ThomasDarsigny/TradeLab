@@ -10,50 +10,17 @@
 
 <div class="news-container">
 	<div class="header">
-		<h1>📰 Actualités Financières</h1>
+		<h1>Actualités Financières</h1>
 		<p>Dernières nouvelles des marchés en temps réel</p>
 	</div>
 
 	<!-- Affichage des prix -->
-	<div class="prices-section">
-		{#if data.crypto?.success}
-			<div class="price-card">
-				<div class="price-header">
-					<h3>₿ Bitcoin</h3>
-					<span class="symbol">{data.crypto.symbol}</span>
-				</div>
-				<div class="price-display">
-					<div class="price-value">${data.crypto.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
-					<div class="price-change {data.crypto.change24h >= 0 ? 'positive' : 'negative'}">
-						<span class="arrow">{data.crypto.change24h >= 0 ? '▲' : '▼'}</span>
-						<span>{Math.abs(data.crypto.change24h).toFixed(2)}%</span>
-					</div>
-				</div>
-				<div class="price-meta">
-					<span>24h variation</span>
-				</div>
-			</div>
-		{/if}
-
-		{#if data.stock?.success}
-			<div class="price-card">
-				<div class="price-header">
-					<h3>📊 {data.stock.name}</h3>
-					<span class="symbol">{data.stock.symbol}</span>
-				</div>
-				<div class="price-display">
-					<div class="price-value">${data.stock.price.toFixed(2)}</div>
-					<div class="price-change {data.stock.change24h >= 0 ? 'positive' : 'negative'}">
-						<span class="arrow">{data.stock.change24h >= 0 ? '▲' : '▼'}</span>
-						<span>{Math.abs(data.stock.change24h).toFixed(2)}%</span>
-					</div>
-				</div>
-				<div class="price-meta">
-					<span>Variation du jour</span>
-				</div>
-			</div>
-		{/if}
-	</div>
+	{#if data.crypto?.success}
+		<p><strong>Bitcoin:</strong> ${data.crypto.price.toLocaleString('en-US', { maximumFractionDigits: 2 })} ({data.crypto.change24h.toFixed(2)}%)</p>
+	{/if}
+	{#if data.stock?.success}
+		<p><strong>{data.stock.symbol}:</strong> ${data.stock.price.toFixed(2)} ({data.stock.change24h.toFixed(2)}%)</p>
+	{/if}
 
 	{#if data.success}
 		<div class="tabs">
@@ -142,7 +109,7 @@
 		</div>
 	{:else}
 		<div class="error-container">
-			<h2>❌ Impossible de charger les actualités</h2>
+			<h2>Impossible de charger les actualités</h2>
 			{#if data.errors?.length}
 				<ul>
 					{#each data.errors as err}
@@ -150,11 +117,11 @@
 					{/each}
 				</ul>
 			{/if}
-			<p class="help-text">Vérifiez que vos clés API GNews et Finnhub sont correctement configurées dans le fichier .env</p>
 		</div>
 	{/if}
 </div>
 
+<!-- TODO: Pas oublier de mettre ca dnas un fichier de style un moment donné -->
 <style>
 	.news-container {
 		min-height: 100vh;
@@ -172,87 +139,6 @@
 	.header p {
 		color: #475569;
 		margin: 0;
-	}
-
-	.prices-section {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 1.5rem;
-		margin-bottom: 2.5rem;
-	}
-
-	.price-card {
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		border-radius: 12px;
-		padding: 1.5rem;
-		color: white;
-		box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-		transition: transform 0.3s, box-shadow 0.3s;
-	}
-
-	.price-card:hover {
-		transform: translateY(-4px);
-		box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-	}
-
-	.price-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-	}
-
-	.price-header h3 {
-		margin: 0;
-		font-size: 1.1rem;
-		font-weight: 600;
-	}
-
-	.symbol {
-		background: rgba(255, 255, 255, 0.2);
-		padding: 0.25rem 0.75rem;
-		border-radius: 20px;
-		font-size: 0.85rem;
-		font-weight: 600;
-	}
-
-	.price-display {
-		margin-bottom: 1rem;
-	}
-
-	.price-value {
-		font-size: 2rem;
-		font-weight: 700;
-		margin-bottom: 0.5rem;
-	}
-
-	.price-change {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-weight: 600;
-		font-size: 1rem;
-		padding: 0.5rem 0.75rem;
-		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.2);
-		width: fit-content;
-	}
-
-	.price-change.positive {
-		color: #4ade80;
-	}
-
-	.price-change.negative {
-		color: #f87171;
-	}
-
-	.arrow {
-		font-size: 1.2rem;
-	}
-
-	.price-meta {
-		font-size: 0.85rem;
-		opacity: 0.9;
 	}
 
 	.tabs {
@@ -399,12 +285,6 @@
 
 	.error-container li {
 		color: #7f1d1d;
-		padding: 0.5rem 0;
-	}
-
-	.help-text {
-		color: #7f1d1d;
-		font-size: 0.9rem;
 	}
 
 	.error-message {
