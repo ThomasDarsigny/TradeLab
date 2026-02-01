@@ -1,0 +1,144 @@
+.search-container {
+	position: relative;
+	width: 100%;
+}
+
+.search-input-wrapper {
+	position: relative;
+	width: 100%;
+}
+
+.search-icon {
+	position: absolute;
+	left: 1rem;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--text-muted);
+	pointer-events: none;
+}
+
+.search-input {
+	width: 100%;
+	padding: 1rem 1rem 1rem 3rem;
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-primary);
+	border-radius: 12px;
+	color: var(--text-primary);
+	font-size: 1rem;
+	transition: all 0.2s ease;
+}
+
+.search-input:focus {
+	outline: none;
+	border-color: var(--accent-primary);
+	box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.search-input::placeholder {
+	color: var(--text-muted);
+}
+
+.search-results {
+	position: absolute;
+	top: calc(100% + 0.5rem);
+	left: 0;
+	right: 0;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-primary);
+	border-radius: 12px;
+	max-height: 400px;
+	overflow-y: auto;
+	box-shadow: var(--shadow-xl);
+	z-index: 100;
+	animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+	from {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.result-item {
+	width: 100%;
+	padding: 1rem;
+	border: none;
+	background: transparent;
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.2s ease;
+	border-bottom: 1px solid var(--border-primary);
+}
+
+.result-item:last-child {
+	border-bottom: none;
+}
+
+.result-item:hover {
+	background: var(--bg-tertiary);
+}
+
+.result-content {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+}
+
+.stock-logo {
+	width: 40px;
+	height: 40px;
+	border-radius: 8px;
+	object-fit: contain;
+	background: white;
+	padding: 0.25rem;
+	border: 1px solid var(--border-primary);
+	flex-shrink: 0;
+}
+
+.stock-logo-placeholder {
+	width: 40px;
+	height: 40px;
+	border-radius: 8px;
+	background: var(--bg-tertiary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 1.25rem;
+	flex-shrink: 0;
+}
+
+.result-details {
+	flex: 1;
+	min-width: 0;
+}
+
+.result-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.result-country {
+	font-size: 1rem;
+	color: white;
+}
+
+.result-symbol {
+	color: var(--accent-primary);
+	font-weight: 700;
+	font-size: 1rem;
+}
+
+.result-name {
+	color: var(--text-secondary);
+	font-size: 0.875rem;
+	margin-top: 0.25rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

@@ -10,9 +10,9 @@
 			<span>TradeLab</span>
 		</div>
 		<nav class="nav">
-			<span class="nav-item">Tableau de bord</span>
-			<span class="nav-item">Marchés</span>
-			<span class="nav-item">Actualités</span>
+			<a class="nav-item" href="/" data-sveltekit-preload-data="hover">Tableau de bord</a>
+			<a class="nav-item" href="/markets" data-sveltekit-preload-data="hover">Marchés</a>
+			<a class="nav-item" href="/news" data-sveltekit-preload-data="hover">Actualités</a>
 		</nav>
 	</header>
 

@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
-import { GNEWS_API_KEY, FINNHUB_API_KEY } from '$env/static/private';
+import { GNEWS_API_KEY } from '$env/static/private';
+import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
 
 const mapGnewsArticles = (data: any) =>
 	(data?.articles ?? []).slice(0, 10).map((article: any) => ({
@@ -41,7 +42,7 @@ const fetchCryptoPrice = async () => {
 
 const fetchStockPrice = async () => {
 	try {
-		const response = await fetch('https://finnhub.io/api/v1/quote?symbol=AAPL&token=' + FINNHUB_API_KEY);
+	const response = await fetch('https://finnhub.io/api/v1/quote?symbol=AAPL&token=' + PUBLIC_FINNHUB_API_KEY);
 		if (!response.ok) throw new Error('Erreur Finnhub');
 		const data = await response.json();
 		return {
@@ -82,11 +83,11 @@ export const load: PageServerLoad = async () => {
 	}
 
 	try {
-		if (!FINNHUB_API_KEY) {
-			throw new Error('Clé Finnhub manquante (FINNHUB_API_KEY)');
+		if (!PUBLIC_FINNHUB_API_KEY) {
+			throw new Error('Clé Finnhub manquante (PUBLIC_FINNHUB_API_KEY)');
 		}
 
-		const finnhubUrl = `https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_API_KEY}`;
+		const finnhubUrl = `https://finnhub.io/api/v1/news?category=general&token=${PUBLIC_FINNHUB_API_KEY}`;
 		const response = await fetch(finnhubUrl);
 		if (!response.ok) {
 			throw new Error(`Finnhub HTTP ${response.status}`);
