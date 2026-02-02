@@ -162,8 +162,12 @@
 	<div class="stock-detail-container">
 		<div class="header">
 			<div class="header-title">
-				{#if stockData.logo}
-					<img src={stockData.logo} alt="{stockData.symbol} logo" class="company-logo" />
+				{#if stockData.symbol}
+					<img
+						src={`/api/stock/logo/${encodeURIComponent(stockData.symbol)}`}
+						alt="{stockData.symbol} logo"
+						class="company-logo"
+					/>
 				{/if}
 				<div>
 					<h2>{loading ? 'Chargement...' : stockData.symbol}</h2>

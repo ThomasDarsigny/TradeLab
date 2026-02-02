@@ -58,11 +58,12 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 	try {
 		const response = await globalThis.fetch(
-			`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`
+			`https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`
 		);
 
 		if (!response.ok) {
-			throw new Error('Erreur lors de la récupération des données du graphique');
+			const body = await response.text();
+			throw new Error(`Erreur Finnhub (${response.status}): ${body || 'Réponse vide'}`);
 		}
 
 		const data = await response.json();

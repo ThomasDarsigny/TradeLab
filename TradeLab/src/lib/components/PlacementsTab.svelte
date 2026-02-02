@@ -1,9 +1,10 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import type { Position } from "$lib/types/account";
     import TradeForm from "./TradeForm.svelte";
     import StockSearch from "./StockSearch.svelte";
     import StockDetail from "./StockDetail.svelte";
+    import { QuotesWebSocket } from "$lib/services/quotesWebSocket";
     import "./PlacementsTab.css";
 
     let positions: Position[] = [];
@@ -14,10 +15,52 @@
     let selectedSymbol = "";
     let showStockDetail = false;
     let detailSymbol = "";
+    let wsConnected = false;
+    let ws: QuotesWebSocket | null = null;
 
-    onMount(() => {
-        loadPositions();
+    onMount(async () => {
+        await loadPositions();
+        
+        ws = QuotesWebSocket.getInstance();
+        
+        ws.onConnectionChange((connected) => {
+            wsConnected = connected;
+        });
+        
+        try {
+            await ws.connect();
+            
+            positions.forEach(position => {
+                ws?.subscribe(position.symbol, (data) => {
+                    updatePositionPrice(position.symbol, data.price);
+                });
+            });
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
     });
+    
+    onDestroy(() => {
+        if (ws) {
+            positions.forEach(position => {
+                ws?.unsubscribe(position.symbol);
+            });
+        }
+    });
+    
+    function updatePositionPrice(symbol: string, newPrice: number) {
+        positions = positions.map(pos => {
+            if (pos.symbol === symbol) {
+                return { ...pos, current_price: newPrice };
+            }
+            return pos;
+        });
+        
+        totalValue = positions.reduce(
+            (sum, pos) => sum + pos.quantity * pos.current_price,
+            0,
+        );
+    }
 
     function calculateProfitLoss(position: Position) {
         const invested = position.quantity * position.entry_price;
@@ -59,11 +102,24 @@
             const response = await fetch("/api/account/positions");
             if (response.ok) {
                 const data = await response.json();
+                
+                if (ws) {
+                    positions.forEach(pos => ws?.unsubscribe(pos.symbol));
+                }
+                
                 positions = data.positions;
                 totalValue = positions.reduce(
                     (sum, pos) => sum + pos.quantity * pos.current_price,
                     0,
                 );
+                
+                if (ws && wsConnected) {
+                    positions.forEach(pos => {
+                        ws?.subscribe(pos.symbol, (data) => {
+                            updatePositionPrice(pos.symbol, data.price);
+                        });
+                    });
+                }
             }
         } catch (error) {
             console.error("Erreur:", error);
@@ -97,6 +153,13 @@
                     Surveillez vos positions et suivez vos performances
                     d'investissement
                 </p>
+            </div>
+            <div class="ws-status">
+                {#if wsConnected}
+                    <span class="status-indicator live">🟢 Live</span>
+                {:else}
+                    <span class="status-indicator offline">🔴 Offline</span>
+                {/if}
             </div>
         </div>
     </div>

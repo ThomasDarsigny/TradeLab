@@ -15,14 +15,19 @@
 	let searchQuery = $state('');
 	let showResults = $state(false);
 	let stocks = $state<Stock[]>([]);
+	let allStocks = $state<Stock[]>([]);
 	let loading = $state(true);
+	const defaultLimit = 100;
+	const searchLimit = 200;
+	let searchTimeout: ReturnType<typeof setTimeout> | undefined;
 	
 	onMount(async () => {
 		try {
-			const response = await fetch('/api/symbols');
+			const response = await fetch('/api/symbols?limit=5000');
 			if (response.ok) {
 				const data = await response.json();
-				stocks = data.symbols || [];
+				allStocks = data.symbols || [];
+				stocks = allStocks;
 			}
 		} catch (error) {
 			console.error('Erreur lors du chargement des symboles:', error);
@@ -31,14 +36,36 @@
 		}
 	});
 
+	$effect(() => {
+		const query = searchQuery.trim();
+		if (searchTimeout) clearTimeout(searchTimeout);
+
+		if (!query) {
+			stocks = allStocks;
+			return;
+		}
+
+		searchTimeout = setTimeout(async () => {
+			try {
+				const response = await fetch(`/api/symbols?q=${encodeURIComponent(query)}&limit=200`);
+				if (response.ok) {
+					const data = await response.json();
+					stocks = data.symbols || [];
+				}
+			} catch (error) {
+				console.error('Erreur lors de la recherche de symboles:', error);
+			}
+		}, 250);
+	});
+
 	let filteredResults = $derived.by(() => {
-		if (!searchQuery.trim()) return stocks.slice(0, 20);
+		if (!searchQuery.trim()) return stocks.slice(0, defaultLimit);
 		
 		const query = searchQuery.toLowerCase();
 		return stocks.filter(stock => 
 			stock.symbol.toLowerCase().includes(query) || 
 			stock.name.toLowerCase().includes(query)
-		).slice(0, 50);
+		).slice(0, searchLimit);
 	});
 
 	function handleSelect(symbol: string) {
@@ -68,7 +95,7 @@
 
 	function getStockLogo(symbol: string): string {
 		const cleanSymbol = symbol.split('.')[0];
-		return `https://storage.googleapis.com/iexcloud-hl37opg/api/logos/${cleanSymbol}.png`;
+		return `/api/stock/logo/${encodeURIComponent(cleanSymbol)}`;
 	}
 </script>
 

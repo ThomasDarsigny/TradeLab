@@ -20,24 +20,67 @@ export const GET: RequestHandler = async ({ params }) => {
 			`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`
 		);
 		
-		if (!quoteResponse.ok) {
-			throw new Error('Erreur lors de la récupération des données');
-		}
-
-		const quoteData = await quoteResponse.json();
-
-		const profileResponse = await globalThis.fetch(
-			`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`
-		);
-
+		let quoteData;
 		let profileData = { 
 			name: `${symbol} Inc.`, 
 			marketCapitalization: 0,
 			logo: '',
 			weburl: ''
 		};
-		if (profileResponse.ok) {
-			profileData = await profileResponse.json();
+		
+		if (quoteResponse.ok) {
+			quoteData = await quoteResponse.json();
+			
+			if (!quoteData.c || quoteData.c === 0) {
+				console.log(`Finnhub no data for ${symbol}, trying Yahoo Finance...`);
+				const yahooResponse = await globalThis.fetch(
+					`http://127.0.0.1:8001/quote/${symbol}`
+				);
+				
+				if (yahooResponse.ok) {
+					const yahooData = await yahooResponse.json();
+					quoteData = {
+						c: yahooData.price,
+						d: yahooData.change,
+						dp: yahooData.changePercent,
+						o: yahooData.open,
+						h: yahooData.high,
+						l: yahooData.low,
+						pc: yahooData.previousClose
+					};
+					profileData.marketCapitalization = yahooData.marketCap / 1000000;
+				} else {
+					throw new Error('Aucune donnée disponible pour ce symbole');
+				}
+			} else {
+				const profileResponse = await globalThis.fetch(
+					`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`
+				);
+				if (profileResponse.ok) {
+					profileData = await profileResponse.json();
+				}
+			}
+		} else {
+			console.log(`Finnhub error for ${symbol}, trying Yahoo Finance...`);
+			const yahooResponse = await globalThis.fetch(
+				`http://127.0.0.1:8001/quote/${symbol}`
+			);
+			
+			if (!yahooResponse.ok) {
+				throw new Error('Erreur lors de la récupération des données');
+			}
+			
+			const yahooData = await yahooResponse.json();
+			quoteData = {
+				c: yahooData.price,
+				d: yahooData.change,
+				dp: yahooData.changePercent,
+				o: yahooData.open,
+				h: yahooData.high,
+				l: yahooData.low,
+				pc: yahooData.previousClose
+			};
+			profileData.marketCapitalization = yahooData.marketCap / 1000000;
 		}
 
 		const cleanSymbol = symbol.toUpperCase().split('.')[0];

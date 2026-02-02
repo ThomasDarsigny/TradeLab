@@ -2,6 +2,19 @@
 	import './+page.css';
 	let { data } = $props<{ data: any }>();
 	let activeTab = $state('gnews');
+
+	function getRelativeTime(dateString: string): string {
+		const date = new Date(dateString);
+		const now = new Date();
+		const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+		if (diffInSeconds < 60) return 'il y a quelques secondes';
+		if (diffInSeconds < 3600) return `il y a ${Math.floor(diffInSeconds / 60)} min`;
+		if (diffInSeconds < 86400) return `il y a ${Math.floor(diffInSeconds / 3600)}h`;
+		if (diffInSeconds < 604800) return `il y a ${Math.floor(diffInSeconds / 86400)}j`;
+		if (diffInSeconds < 2592000) return `il y a ${Math.floor(diffInSeconds / 604800)} semaine${Math.floor(diffInSeconds / 604800) > 1 ? 's' : ''}`;
+		return `il y a ${Math.floor(diffInSeconds / 2592000)} mois`;
+	}
 </script>
 
 <svelte:head>

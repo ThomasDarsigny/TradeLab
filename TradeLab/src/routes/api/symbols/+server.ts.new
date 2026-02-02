@@ -26,6 +26,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (query) {
 			let symbols: any[] = [];
 
+			// 1. Tenter Finnhub
 			try {
 				const response = await fetch(
 					`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${PUBLIC_FINNHUB_API_KEY}`
@@ -48,6 +49,7 @@ export const GET: RequestHandler = async ({ url }) => {
 				console.warn('Finnhub search error:', finnhubError);
 			}
 
+			// 2. Fallback Yahoo Finance si Finnhub retourne peu de résultats
 			if (symbols.length < 5) {
 				try {
 					const yahooResponse = await fetch(

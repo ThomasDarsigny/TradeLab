@@ -7,6 +7,7 @@
 <div class="app">
 	<header class="app-header">
 		<div class="brand">
+			<img src="/logo.png" alt="TradeLab Logo" class="logo" style="width: 60px; height: 60px;" />
 			<span>TradeLab</span>
 		</div>
 		<nav class="nav">
