@@ -2,30 +2,26 @@
     import { onMount, onDestroy } from "svelte";
     import type { Position } from "$lib/types/account";
     import TradeForm from "./TradeForm.svelte";
-    import StockSearch from "./StockSearch.svelte";
     import StockDetail from "./StockDetail.svelte";
+    import PortfolioCharts from "./PortfolioCharts.svelte";
     import { QuotesWebSocket } from "$lib/services/quotesWebSocket";
     import "./PlacementsTab.css";
 
-    let positions: Position[] = [];
-    let loading = true;
-    let totalValue = 0;
-    let showTradeForm = false;
-    let tradeMode: "buy" | "sell" = "buy";
-    let selectedSymbol = "";
-    let showStockDetail = false;
-    let detailSymbol = "";
-    let wsConnected = false;
+    let positions: Position[] = $state([]);
+    let loading = $state(true);
+    let totalValue = $state(0);
+    let accountBalance = $state(0);
+    let showTradeForm = $state(false);
+    let tradeMode: "buy" | "sell" = $state("buy");
+    let selectedSymbol = $state("");
+    let showStockDetail = $state(false);
+    let detailSymbol = $state("");
     let ws: QuotesWebSocket | null = null;
 
     onMount(async () => {
         await loadPositions();
         
         ws = QuotesWebSocket.getInstance();
-        
-        ws.onConnectionChange((connected) => {
-            wsConnected = connected;
-        });
         
         try {
             await ws.connect();
@@ -99,7 +95,7 @@
     async function loadPositions() {
         loading = true;
         try {
-            const response = await fetch("/api/account/positions");
+            const response = await fetch("/api/account/positions", { credentials: 'include' });
             if (response.ok) {
                 const data = await response.json();
                 
@@ -112,8 +108,14 @@
                     (sum, pos) => sum + pos.quantity * pos.current_price,
                     0,
                 );
+
+                const accountResponse = await fetch("/api/account", { credentials: 'include' });
+                if (accountResponse.ok) {
+                    const accountData = await accountResponse.json();
+                    accountBalance = accountData.account.current_balance;
+                }
                 
-                if (ws && wsConnected) {
+                if (ws) {
                     positions.forEach(pos => {
                         ws?.subscribe(pos.symbol, (data) => {
                             updatePositionPrice(pos.symbol, data.price);
@@ -147,25 +149,9 @@
 <div class="placements-container">
     <div class="placements-header">
         <div class="header-content">
-            <div>
-                <h2>Gestion de Portefeuille</h2>
-                <p>
-                    Surveillez vos positions et suivez vos performances
-                    d'investissement
-                </p>
-            </div>
-            <div class="ws-status">
-                {#if wsConnected}
-                    <span class="status-indicator live">🟢 Live</span>
-                {:else}
-                    <span class="status-indicator offline">🔴 Offline</span>
-                {/if}
-            </div>
+            <h2>Mes Positions</h2>
+            <p>Actions que vous possédez actuellement</p>
         </div>
-    </div>
-
-    <div class="search-section">
-        <StockSearch onSelect={handleStockSearch} />
     </div>
 
     {#if showTradeForm}
@@ -178,7 +164,7 @@
                 </h3>
                 <button
                     class="btn-close"
-                    on:click={closeTradeForm}
+                    onclick={closeTradeForm}
                     aria-label="Fermer le formulaire"
                 >
                     <svg
@@ -203,6 +189,14 @@
     {:else if positions.length > 0}
         <div class="portfolio-summary">
             <div class="summary-card">
+                <div class="summary-label">Solde du Compte</div>
+                <div class="summary-value">
+                    ${accountBalance.toLocaleString("fr-FR", {
+                        maximumFractionDigits: 2,
+                    })}
+                </div>
+            </div>
+            <div class="summary-card">
                 <div class="summary-label">Valeur du Portefeuille</div>
                 <div class="summary-value">
                     ${totalValue.toLocaleString("fr-FR", {
@@ -215,6 +209,8 @@
                 <div class="summary-value">{positions.length}</div>
             </div>
         </div>
+
+        <PortfolioCharts {positions} {accountBalance} />
 
         <div class="positions-list">
             {#each positions as position (position.id)}
@@ -289,7 +285,7 @@
                     </div>
 
                     <div class="position-actions">
-                        <button class="btn-sell" on:click={() => openSellForm(position.symbol)}>Vendre</button>
+                        <button class="btn-sell" onclick={() => openSellForm(position.symbol)}>Vendre</button>
                         <button class="btn-more">Détails</button>
                     </div>
                 </div>

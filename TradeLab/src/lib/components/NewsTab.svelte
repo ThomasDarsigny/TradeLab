@@ -15,7 +15,7 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch('/api/account/transactions');
+			const response = await fetch('/api/account/transactions', { credentials: 'include' });
 			if (response.ok) {
 				const data = await response.json();
 				news = data.transactions.map((t: any) => ({

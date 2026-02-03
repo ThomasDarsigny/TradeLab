@@ -35,7 +35,7 @@
 	async function loadPositions() {
 		loading = true;
 		try {
-			const response = await fetch('/api/account/positions');
+			const response = await fetch('/api/account/positions', { credentials: 'include' });
 			if (response.ok) {
 				const data = await response.json();
 				positions = data.positions;

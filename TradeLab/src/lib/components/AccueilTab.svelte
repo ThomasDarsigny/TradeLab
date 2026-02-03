@@ -9,7 +9,7 @@
 
 	onMount(async () => {
 		try {
-			const response = await fetch('/api/account');
+			const response = await fetch('/api/account', { credentials: 'include' });
 			if (response.ok) {
 				const data = await response.json();
 				account = data.account;

@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { GNEWS_API_KEY } from '$env/static/private';
 import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
+import { error } from '@sveltejs/kit';
 
 const mapGnewsArticles = (data: any) =>
 	(data?.articles ?? []).slice(0, 10).map((article: any) => ({
@@ -22,7 +23,8 @@ const mapFinnhubArticles = (data: any) =>
 		description: article.summary
 	}));
 
-export const load: PageServerLoad = async () => {
+
+export const load: PageServerLoad = async ({ locals }) => {
 	const errors: string[] = [];
 
 	let gnews: { success: boolean; articles: any[] } = { success: false, articles: [] };

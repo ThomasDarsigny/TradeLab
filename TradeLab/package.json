@@ -25,6 +25,7 @@
 	"dependencies": {
 		"@supabase/ssr": "^0.8.0",
 		"@supabase/supabase-js": "^2.93.3",
+		"chart.js": "^4.5.1",
 		"coingecko-api-v3": "^0.0.31",
 		"lightweight-charts": "^5.1.0",
 		"yahoo-finance2": "^3.13.0"
