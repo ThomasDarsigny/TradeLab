@@ -1,22 +1,48 @@
-node_modules
+# Dependencies
+node_modules/
+venv/
+.venv/
 
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/.svelte-kit
-/build
+# Configuration sensible
+backend/config/proxy_config.py
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Output & Build
+.output/
+.vercel/
+.netlify/
+.wrangler/
+.svelte-kit/
+/build/
+dist/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Env
-.env
-.env.*
-!.env.example
-!.env.test
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
 
 # Vite
 vite.config.js.timestamp-*

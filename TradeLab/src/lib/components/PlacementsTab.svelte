@@ -283,6 +283,7 @@
                             </span>
                         </div>
                     </div>
+                </div>
             {/each}
         </div>
     {:else}

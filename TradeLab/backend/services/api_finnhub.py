@@ -201,25 +201,26 @@ async def websocket_multi(websocket: WebSocket):
     - Cache local
     - Jusqu'à 15 symboles par connexion
     """
-    try:        await websocket.accept()
-        
+    try:
+        await websocket.accept()
+
         data = await websocket.receive_text()
         message = json.loads(data)
         symbols = message.get('symbols', [])[:15]
-        
+
         if not symbols:
             await websocket.send_json({
                 "type": "error",
                 "detail": "Envoyez {'symbols': ['AAPL', 'MSFT']}"
             })
             return
-        
+
         await multi_manager.connect(websocket, symbols)
-        
+
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
-            
+
             if msg.get('type') == 'subscribe':
                 new_symbols = msg.get('symbols', [])
                 current = multi_manager.subscriptions.get(websocket, set())
