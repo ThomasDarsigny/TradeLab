@@ -1,90 +1,79 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from '@sveltejs/kit';
-import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
+const FINNHUB_API_URL = 'http://127.0.0.1:8000';
 
 export const GET: RequestHandler = async ({ params, url }) => {
 	const { symbol } = params as unknown as { symbol: string };
-	const apiKey = PUBLIC_FINNHUB_API_KEY;
 	const period = url.searchParams.get('period') || '1M';
-	
-	console.log('API Key disponible:', !!apiKey, 'Symbol:', symbol, 'Period:', period);
 
-	if (!apiKey) {
-		console.error('Clé API Finnhub non disponible');
-		return json(
-			{ error: 'Configuration API manquante' },
-			{ status: 500 }
-		);
-	}
-	
-	let resolution = 'D';
-	let from: number;
-	let to = Math.floor(Date.now() / 1000);
+	const periodMap: Record<string, { resolution: string; count: number }> = {
+		'1D': { resolution: 'D', count: 30 },     // 30 jours (limité par API gratuite)
+		'1W': { resolution: 'D', count: 60 },
+		'1M': { resolution: 'D', count: 30 },
+		'3M': { resolution: 'D', count: 90 },     // 90 jours (max API gratuite)
+		'1Y': { resolution: 'W', count: 52 },     // 52 semaines (max API gratuite)
+		'5Y': { resolution: 'M', count: 60 }      // 60 mois (max API gratuite)
+	};
 
-	// Calculer les dates en fonction de la période
-	switch (period) {
-		case '1D':
-			resolution = '60';
-			from = to - (1 * 24 * 60 * 60);
-			break;
-		case '1W':
-			resolution = 'D';
-			from = to - (7 * 24 * 60 * 60);
-			break;
-		case '1M':
-			resolution = 'D';
-			from = to - (30 * 24 * 60 * 60);
-			break;
-		case '3M':
-			resolution = 'W';
-			from = to - (90 * 24 * 60 * 60);
-			break;
-		case '1Y':
-			resolution = 'W';
-			from = to - (365 * 24 * 60 * 60);
-			break;
-		case '5Y':
-			resolution = 'M';
-			from = to - (5 * 365 * 24 * 60 * 60);
-			break;
-		case 'ALL':
-			resolution = 'M';
-			from = to - (10 * 365 * 24 * 60 * 60);
-			break;
-		default:
-			resolution = 'D';
-			from = to - (30 * 24 * 60 * 60);
-	}
+	const { resolution, count } = periodMap[period] || { resolution: 'D', count: 20 };
 
 	try {
 		const response = await globalThis.fetch(
-			`https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}&token=${apiKey}`
+			`${FINNHUB_API_URL}/candles/${encodeURIComponent(symbol)}?resolution=${resolution}&count=${count}`
 		);
+
+		console.log(`Finnhub candles response status: ${response.status} for ${symbol}`);
 
 		if (!response.ok) {
 			const body = await response.text();
-			throw new Error(`Erreur Finnhub (${response.status}): ${body || 'Réponse vide'}`);
+			console.error(`Finnhub candles error (${response.status}): ${body || 'Réponse vide'}`);
+			return json({
+				timestamps: [],
+				open: [],
+				high: [],
+				low: [],
+				close: [],
+				volume: [],
+				error: `Données indisponibles (Finnhub ${response.status})`
+			});
 		}
 
 		const data = await response.json();
 
-		if (data.s === 'no_data') {
-			return json({ error: 'Aucune donnée disponible pour ce symbole' }, { status: 404 });
+		if (!data.timestamps || data.timestamps.length === 0) {
+			console.log(`No Finnhub candle data for ${symbol}`);
+			return json({
+				timestamps: [],
+				open: [],
+				high: [],
+				low: [],
+				close: [],
+				volume: [],
+				error: 'Aucune donnée disponible pour ce symbole'
+			});
 		}
 
 		return json({
-			timestamps: data.t || [],
-			open: data.o || [],
-			high: data.h || [],
-			low: data.l || [],
-			close: data.c || [],
-			volume: data.v || []
+			timestamps: data.timestamps || [],
+			open: data.open || [],
+			high: data.high || [],
+			low: data.low || [],
+			close: data.close || [],
+			volume: data.volume || []
 		});
 	} catch (error) {
-		console.error('Erreur API Candles:', error);
+		console.error('Erreur API Finnhub Candles:', error);
 		return json(
-			{ error: 'Impossible de récupérer les données du graphique' },
-			{ status: 500 }
+			{
+				timestamps: [],
+				open: [],
+				high: [],
+				low: [],
+				close: [],
+				volume: [],
+				error: 'Impossible de récupérer les données du graphique (Finnhub)'
+			},
+			{ status: 200 }
 		);
 	}
 };

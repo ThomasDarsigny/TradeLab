@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import yfinance as yf
 import requests
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from datetime import datetime, time
 import pytz
 import uvicorn
@@ -114,8 +114,13 @@ class ConnectionManager:
         self.finnhub_subscriptions: set = set()
         self.yahoo_subscriptions: set = set()
         self.price_cache = PriceCache()
-        self.lock = asyncio.Lock()
+        self.lock: Optional[asyncio.Lock] = None
         self.yahoo_task = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+        return self.lock
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -164,7 +169,7 @@ class ConnectionManager:
     
     async def subscribe_yahoo(self, symbol: str):
         """S'abonner à un symbole via Yahoo Finance (polling intelligent)"""
-        async with self.lock:
+        async with self._get_lock():
             if symbol not in self.yahoo_subscriptions:
                 self.yahoo_subscriptions.add(symbol)
                 print(f" Subscribed to {symbol} via Yahoo Finance polling")
@@ -176,7 +181,7 @@ class ConnectionManager:
         )
         
         if not still_subscribed:
-            async with self.lock:
+            async with self._get_lock():
                 if symbol in self.finnhub_subscriptions:
                     await self.unsubscribe_finnhub(symbol)
                 if symbol in self.yahoo_subscriptions:
@@ -185,7 +190,7 @@ class ConnectionManager:
 
     async def subscribe_finnhub(self, symbol: str):
         """S'abonner à un symbole sur Finnhub WebSocket"""
-        async with self.lock:
+        async with self._get_lock():
             if symbol not in self.finnhub_subscriptions:
                 self.finnhub_subscriptions.add(symbol)
                 if self.finnhub_ws:
@@ -199,7 +204,7 @@ class ConnectionManager:
 
     async def unsubscribe_finnhub(self, symbol: str):
         """Se désabonner d'un symbole sur Finnhub WebSocket"""
-        async with self.lock:
+        async with self._get_lock():
             if symbol in self.finnhub_subscriptions:
                 self.finnhub_subscriptions.discard(symbol)
                 if self.finnhub_ws:
@@ -354,6 +359,7 @@ def search_symbols(q: str, limit: int = 100):
 @app.get("/quote/{symbol}")
 def get_quote(symbol: str):
     """Récupère le quote d'un symbole (fallback yfinance)"""
+    symbol = symbol.replace('$', '').upper()
     try:
         ticker = yf.Ticker(symbol, session=session)
         info = ticker.fast_info
@@ -370,30 +376,88 @@ def get_quote(symbol: str):
             'marketCap': info.get('marketCap', 0)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Quote error for {symbol}: {e}")
+        return {
+            'symbol': symbol.upper(),
+            'price': 0,
+            'change': 0,
+            'changePercent': 0,
+            'open': 0,
+            'high': 0,
+            'low': 0,
+            'previousClose': 0,
+            'marketCap': 0,
+            'error': f'Données indisponibles pour {symbol}'
+        }
 
 @app.get("/history/{symbol}")
 def get_history(symbol: str, period: str = "1mo", interval: str = "1d"):
     """Récupère l'historique des prix (chandeliers)"""
+    symbol = symbol.replace('$', '').upper()
     try:
         ticker = yf.Ticker(symbol, session=session)
         hist = ticker.history(period=period, interval=interval)
-        
-        if hist.empty:
-            raise HTTPException(status_code=404, detail="No data available")
-        
-        timestamps = [int(ts.timestamp()) for ts in hist.index]
-        
-        return {
-            'timestamps': timestamps,
-            'open': hist['Open'].tolist(),
-            'high': hist['High'].tolist(),
-            'low': hist['Low'].tolist(),
-            'close': hist['Close'].tolist(),
-            'volume': hist['Volume'].tolist()
-        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            'timestamps': [],
+            'open': [],
+            'high': [],
+            'low': [],
+            'close': [],
+            'volume': [],
+            'error': str(e)
+        }
+
+    if hist.empty:
+        # Tentatives de repli avec d'autres paramètres
+        fallbacks: Tuple[Tuple[str, str], ...] = (
+            ('5d', '30m'),
+            ('1mo', '1d'),
+            ('3mo', '1d'),
+            ('1y', '1wk'),
+            ('max', '1mo')
+        )
+        for fb_period, fb_interval in fallbacks:
+            try:
+                hist = ticker.history(period=fb_period, interval=fb_interval)
+                if not hist.empty:
+                    break
+            except Exception:
+                continue
+
+    # Dernier recours: essayer yf.download() pour les futures et actifs spéciaux
+    if hist.empty:
+        try:
+            print(f"Trying yf.download() for {symbol} with period={period}, interval={interval}")
+            hist = yf.download(symbol, period=period, interval=interval, progress=False, session=session)
+            if not hist.empty:
+                print(f"yf.download() succeeded for {symbol}")
+        except Exception as e:
+            print(f"yf.download() failed for {symbol}: {e}")
+
+    if hist.empty:
+        return {
+            'timestamps': [],
+            'open': [],
+            'high': [],
+            'low': [],
+            'close': [],
+            'volume': [],
+            'error': 'No data available'
+        }
+
+    timestamps = [int(ts.timestamp()) for ts in hist.index]
+
+    return {
+        'timestamps': timestamps,
+        'open': hist['Open'].tolist(),
+        'high': hist['High'].tolist(),
+        'low': hist['Low'].tolist(),
+        'close': hist['Close'].tolist(),
+        'volume': hist['Volume'].tolist()
+    }
+
+
 
 @app.websocket("/ws/quotes")
 async def websocket_quotes(websocket: WebSocket):

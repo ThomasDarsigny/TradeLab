@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ params }) => {
 			`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`
 		);
 		
-		let quoteData;
+		let quoteData = { c: 0, d: 0, dp: 0, o: 0, h: 0, l: 0, pc: 0 };
 		let profileData = { 
 			name: `${symbol} Inc.`, 
 			marketCapitalization: 0,
@@ -33,6 +33,42 @@ export const GET: RequestHandler = async ({ params }) => {
 			
 			if (!quoteData.c || quoteData.c === 0) {
 				console.log(`Finnhub no data for ${symbol}, trying Yahoo Finance...`);
+				try {
+					const yahooResponse = await globalThis.fetch(
+						`http://127.0.0.1:8001/quote/${symbol}`
+					);
+					
+					if (yahooResponse.ok) {
+						const yahooData = await yahooResponse.json();
+						quoteData = {
+							c: yahooData.price,
+							d: yahooData.change,
+							dp: yahooData.changePercent,
+							o: yahooData.open,
+							h: yahooData.high,
+							l: yahooData.low,
+							pc: yahooData.previousClose
+						};
+						profileData.marketCapitalization = yahooData.marketCap / 1000000;
+					}
+				} catch (e) {
+					console.log(`Yahoo Finance unavailable, returning Finnhub data with 0 values`);
+				}
+			} else {
+				try {
+					const profileResponse = await globalThis.fetch(
+						`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`
+					);
+					if (profileResponse.ok) {
+						profileData = await profileResponse.json();
+					}
+				} catch (e) {
+					console.log('Profile data unavailable, continuing with empty profile');
+				}
+			}
+		} else {
+			console.log(`Finnhub error for ${symbol}, trying Yahoo Finance...`);
+			try {
 				const yahooResponse = await globalThis.fetch(
 					`http://127.0.0.1:8001/quote/${symbol}`
 				);
@@ -49,38 +85,10 @@ export const GET: RequestHandler = async ({ params }) => {
 						pc: yahooData.previousClose
 					};
 					profileData.marketCapitalization = yahooData.marketCap / 1000000;
-				} else {
-					throw new Error('Aucune donnée disponible pour ce symbole');
 				}
-			} else {
-				const profileResponse = await globalThis.fetch(
-					`https://finnhub.io/api/v1/stock/profile2?symbol=${symbol}&token=${apiKey}`
-				);
-				if (profileResponse.ok) {
-					profileData = await profileResponse.json();
-				}
+			} catch (e) {
+				console.log(`Yahoo Finance also failed for ${symbol}, returning empty data`);
 			}
-		} else {
-			console.log(`Finnhub error for ${symbol}, trying Yahoo Finance...`);
-			const yahooResponse = await globalThis.fetch(
-				`http://127.0.0.1:8001/quote/${symbol}`
-			);
-			
-			if (!yahooResponse.ok) {
-				throw new Error('Erreur lors de la récupération des données');
-			}
-			
-			const yahooData = await yahooResponse.json();
-			quoteData = {
-				c: yahooData.price,
-				d: yahooData.change,
-				dp: yahooData.changePercent,
-				o: yahooData.open,
-				h: yahooData.high,
-				l: yahooData.low,
-				pc: yahooData.previousClose
-			};
-			profileData.marketCapitalization = yahooData.marketCap / 1000000;
 		}
 
 		const cleanSymbol = symbol.toUpperCase().split('.')[0];

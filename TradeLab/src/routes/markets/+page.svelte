@@ -11,11 +11,18 @@
 	let showTradeForm = $state(false);
 	let tradeSymbol = $state('');
 	let popularSymbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'AMD'];
-	let symbolPrices: Record<string, { price: number; change: number }> = $state({});
+	let symbolPrices: Record<string, { price: number; change: number; openPrice?: number; logo?: string }> = $state({});
 	let ws: QuotesWebSocket | null = null;
 	let activeTab: 'popular' | 'watchlist' | 'recent' = $state('popular');
-	let watchlistData: Record<string, { price: number; change: number }> = $state({});
+	let watchlistData: Record<string, { price: number; change: number; openPrice?: number; logo?: string }> = $state({});
 	
+	const fallbackLogo = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22 viewBox=%220 0 40 40%22%3E%3Crect fill=%22%23ddd%22 width=%2240%22 height=%2240%22/%3E%3C/svg%3E';
+
+	function handleImageError(event: Event) {
+		const img = event.target as HTMLImageElement;
+		img.src = fallbackLogo;
+	}
+
 	function isMarketOpen(): { stock: boolean; crypto: boolean } {
 		const now = new Date();
 		const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -37,8 +44,39 @@
 	
 	let statusInterval: any;
 
+	async function loadSymbolData(symbol: string, isWatchlist = false) {
+		try {
+			const response = await fetch(`/api/stock/${symbol}`);
+			if (response.ok) {
+				const data = await response.json();
+				const openPrice = data.open || 0;
+				const currentPrice = data.price || 0;
+				const change = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
+				const logo = data.logo || '';
+				
+				if (isWatchlist) {
+					watchlistData = { 
+						...watchlistData, 
+						[symbol]: { price: currentPrice, change, openPrice, logo } 
+					};
+				} else {
+					symbolPrices = { 
+						...symbolPrices, 
+						[symbol]: { price: currentPrice, change, openPrice, logo } 
+					};
+				}
+			}
+		} catch (error) {
+			console.error(`Error loading data for ${symbol}:`, error);
+		}
+	}
+
 	onMount(async () => {
 		initializeMarketStores();
+		
+		await Promise.all(popularSymbols.map(symbol => loadSymbolData(symbol, false)));
+		
+		await Promise.all($watchlist.map(symbol => loadSymbolData(symbol, true)));
 		
 		statusInterval = setInterval(() => {
 			marketStatus = isMarketOpen();
@@ -74,15 +112,23 @@
 	});
 
 	function updateSymbolPrice(symbol: string, price: number) {
-		const oldPrice = symbolPrices[symbol]?.price || price;
-		const change = ((price - oldPrice) / oldPrice) * 100;
-		symbolPrices = { ...symbolPrices, [symbol]: { price, change: change || 0 } };
+		const openPrice = symbolPrices[symbol]?.openPrice || price;
+		const change = openPrice > 0 ? ((price - openPrice) / openPrice) * 100 : 0;
+		const logo = symbolPrices[symbol]?.logo;
+		symbolPrices = { 
+			...symbolPrices, 
+			[symbol]: { price, change, openPrice, logo } 
+		};
 	}
 
 	function updateWatchlistPrice(symbol: string, price: number) {
-		const oldPrice = watchlistData[symbol]?.price || price;
-		const change = ((price - oldPrice) / oldPrice) * 100;
-		watchlistData = { ...watchlistData, [symbol]: { price, change: change || 0 } };
+		const openPrice = watchlistData[symbol]?.openPrice || price;
+		const change = openPrice > 0 ? ((price - openPrice) / openPrice) * 100 : 0;
+		const logo = watchlistData[symbol]?.logo;
+		watchlistData = { 
+			...watchlistData, 
+			[symbol]: { price, change, openPrice, logo } 
+		};
 	}
 
 	function handleStockSearch(symbol: string) {
@@ -137,22 +183,6 @@
 		<div class="header-content">
 			<h1>Marchés Financiers</h1>
 			<p>Découvrez et tradez les meilleures actions en temps réel</p>
-		</div>
-		<div class="market-status">
-			<div class="status-item">
-				<span class="status-label">Actions</span>
-				<span class="status-indicator {marketStatus.stock ? 'open' : 'closed'}">
-					<span class="pulse"></span>
-					{marketStatus.stock ? 'Ouvert' : 'Fermé'}
-				</span>
-			</div>
-			<div class="status-item">
-				<span class="status-label">Crypto</span>
-				<span class="status-indicator open">
-					<span class="pulse"></span>
-					24/7
-				</span>
-			</div>
 		</div>
 	</div>
 
@@ -224,27 +254,27 @@
 				{#each popularSymbols as symbol}
 					{@const priceInfo = symbolPrices[symbol]}
 					<div class="symbol-card">
-						<div class="card-top">
-							<div class="symbol-header">
-								<h3 class="symbol-name">{symbol}</h3>
-								<button 
-									class="btn-watchlist {isInWatchlist(symbol) ? 'active' : ''}"
-									onclick={() => toggleWatchlist(symbol)}
-									title={isInWatchlist(symbol) ? 'Retirer de ma watchlist' : 'Ajouter à ma watchlist'}
-								>
-									{isInWatchlist(symbol) ? '⭐' : '☆'}
-								</button>
-							</div>
-							{#if priceInfo}
-								<div class="price-section">
-									<div class="price">${priceInfo.price.toFixed(2)}</div>
-									<div class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
-										{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
-									</div>
+						<div class="card-header">
+							{#if priceInfo?.logo}
+								<div class="card-logo-small">
+									<img src={priceInfo.logo} alt={symbol} onerror={(e) => handleImageError(e)} />
 								</div>
 							{:else}
-								<div class="price-section loading">Chargement...</div>
+								<div class="card-logo-small"></div>
 							{/if}
+							<div class="symbol-info">
+								<h3 class="symbol-name">{symbol}</h3>
+								{#if priceInfo}
+									<div class="price-display">
+										<span class="price">${priceInfo.price.toFixed(2)}</span>
+										<span class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
+											{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
+										</span>
+									</div>
+								{:else}
+									<div class="loading-text">Chargement...</div>
+								{/if}
+							</div>
 						</div>
 						<div class="card-actions">
 							<button class="btn-details" onclick={() => handleStockSearch(symbol)}>
@@ -266,34 +296,41 @@
 				<div class="empty-state">
 					<div class="empty-icon">📌</div>
 					<h3>Watchlist vide</h3>
-					<p>Cliquez sur ⭐ pour ajouter vos actions préférées à suivre</p>
+					<p>Ouvrez les détails d'une action pour l'ajouter à votre watchlist</p>
 				</div>
 			{:else}
 				<div class="symbols-grid">
 					{#each $watchlist as symbol}
 						{@const priceInfo = watchlistData[symbol]}
 						<div class="symbol-card">
-							<div class="card-top">
-								<div class="symbol-header">
-									<h3 class="symbol-name">{symbol}</h3>
-									<button 
-										class="btn-watchlist active"
-										onclick={() => removeFromWatchlistClick(symbol)}
-										title="Retirer de ma watchlist"
-									>
-										⭐
-									</button>
-								</div>
-								{#if priceInfo}
-									<div class="price-section">
-										<div class="price">${priceInfo.price.toFixed(2)}</div>
-										<div class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
-											{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
-										</div>
+							<div class="card-header">
+								{#if priceInfo?.logo}
+									<div class="card-logo-small">
+										<img src={priceInfo.logo} alt={symbol} onerror={(e) => handleImageError(e)} />
 									</div>
 								{:else}
-									<div class="price-section loading">Chargement...</div>
+									<div class="card-logo-small"></div>
 								{/if}
+								<div class="symbol-info">
+									<h3 class="symbol-name">{symbol}</h3>
+									{#if priceInfo}
+										<div class="price-display">
+											<span class="price">${priceInfo.price.toFixed(2)}</span>
+											<span class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
+												{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
+											</span>
+										</div>
+									{:else}
+										<div class="loading-text">Chargement...</div>
+									{/if}
+								</div>
+								<button 
+									class="btn-watchlist active"
+									onclick={() => removeFromWatchlistClick(symbol)}
+									title="Retirer de ma watchlist"
+								>
+									⭐
+								</button>
 							</div>
 							<div class="card-actions">
 								<button class="btn-details" onclick={() => handleStockSearch(symbol)}>
@@ -323,27 +360,27 @@
 					{#each $recentSymbols as symbol}
 						{@const priceInfo = symbolPrices[symbol] || watchlistData[symbol]}
 						<div class="symbol-card">
-							<div class="card-top">
-								<div class="symbol-header">
-									<h3 class="symbol-name">{symbol}</h3>
-									<button 
-										class="btn-watchlist {isInWatchlist(symbol) ? 'active' : ''}"
-										onclick={() => toggleWatchlist(symbol)}
-										title={isInWatchlist(symbol) ? 'Retirer de ma watchlist' : 'Ajouter à ma watchlist'}
-									>
-										{isInWatchlist(symbol) ? '⭐' : '☆'}
-									</button>
-								</div>
-								{#if priceInfo}
-									<div class="price-section">
-										<div class="price">${priceInfo.price.toFixed(2)}</div>
-										<div class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
-											{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
-										</div>
+							<div class="card-header">
+								{#if priceInfo?.logo}
+									<div class="card-logo-small">
+										<img src={priceInfo.logo} alt={symbol} onerror={(e) => handleImageError(e)} />
 									</div>
 								{:else}
-									<div class="price-section loading">Chargement...</div>
+									<div class="card-logo-small"></div>
 								{/if}
+								<div class="symbol-info">
+									<h3 class="symbol-name">{symbol}</h3>
+									{#if priceInfo}
+										<div class="price-display">
+											<span class="price">${priceInfo.price.toFixed(2)}</span>
+											<span class="change-badge {priceInfo.change > 0 ? 'positive' : 'negative'}">
+												{priceInfo.change > 0 ? '▲' : '▼'} {Math.abs(priceInfo.change).toFixed(2)}%
+											</span>
+										</div>
+									{:else}
+										<div class="loading-text">Chargement...</div>
+									{/if}
+								</div>
 							</div>
 							<div class="card-actions">
 								<button class="btn-details" onclick={() => handleStockSearch(symbol)}>
@@ -393,63 +430,6 @@
 		font-size: 1.1rem;
 	}
 
-	.market-status {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		align-items: flex-end;
-	}
-
-	.status-item {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 0.25rem;
-	}
-
-	.status-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.status-indicator {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.65rem 1.1rem;
-		border-radius: 12px;
-		font-size: 0.9rem;
-		font-weight: 700;
-	}
-
-	.status-indicator.open {
-		background: rgba(16, 185, 129, 0.15);
-		color: #6ee7b7;
-		border: 1px solid rgba(16, 185, 129, 0.3);
-	}
-
-	.status-indicator.closed {
-		background: rgba(239, 68, 68, 0.15);
-		color: #fca5a5;
-		border: 1px solid rgba(239, 68, 68, 0.3);
-	}
-
-	.pulse {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: currentColor;
-		animation: pulse 2s infinite;
-	}
-
-	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.5; }
-	}
 
 	.search-section {
 		background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
@@ -575,16 +555,44 @@
 		transform: scaleX(1);
 	}
 
-	.card-top {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.symbol-header {
+	.card-header {
 		display: flex;
 		align-items: center;
+		gap: 1rem;
 		justify-content: space-between;
+	}
+
+	.card-logo-small {
+		width: 48px;
+		height: 48px;
+		border-radius: 8px;
+		background: var(--bg-tertiary);
+		padding: 0.4rem;
+		border: 1px solid var(--border-secondary);
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		overflow: hidden;
+	}
+
+	.card-logo-small img {
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+	}
+
+	.symbol-info {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.price-display {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 	}
 
 	.symbol-name {
@@ -593,6 +601,11 @@
 		color: var(--text-primary);
 		font-weight: 800;
 		letter-spacing: -0.025em;
+	}
+
+	.loading-text {
+		color: var(--text-secondary);
+		font-size: 0.95rem;
 	}
 
 	.btn-watchlist {
@@ -613,18 +626,6 @@
 
 	.btn-watchlist.active {
 		opacity: 1;
-	}
-
-	.price-section {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		flex-wrap: wrap;
-	}
-
-	.price-section.loading {
-		color: var(--text-secondary);
-		font-size: 0.95rem;
 	}
 
 	.price {

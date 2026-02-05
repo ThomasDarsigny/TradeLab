@@ -19,23 +19,18 @@
 	let success = $state('');
 	let isSubmitting = $state(false);
 
-	// Calcul du montant total
 	let totalAmount = $derived(quantity * price);
 
-	// Vérifier si on a suffisamment de fonds pour un achat
 	let canAfford = $derived(mode === 'buy' ? totalAmount <= portfolio.cash : true);
 
-	// Obtenir la position existante pour une vente
 	let existingPosition = $derived(
 		mode === 'sell' ? portfolio.getPosition(symbol.toUpperCase()) : undefined
 	);
 
-	// Vérifier si on a suffisamment d'actions pour une vente
 	let hasEnoughShares = $derived(
 		mode === 'sell' ? existingPosition && quantity <= existingPosition.quantity : true
 	);
 
-	// Message d'erreur de validation
 	let validationError = $derived.by(() => {
 		if (!symbol.trim()) return 'Symbole requis';
 		if (quantity <= 0) return 'La quantité doit être positive';
@@ -52,7 +47,6 @@
 		return '';
 	});
 
-	// Peut soumettre le formulaire
 	let canSubmit = $derived(!validationError && !isSubmitting && symbol.trim() !== '');
 
 	function handleSubmit() {
@@ -73,7 +67,6 @@
 				success = `Vente réussie : ${quantity} ${upperSymbol} à ${price.toFixed(2)}$`;
 			}
 
-			// Réinitialiser le formulaire
 			setTimeout(() => {
 				symbol = '';
 				quantity = 1;
@@ -96,25 +89,6 @@
 </script>
 
 <div class="trade-form">
-	<div class="trade-header">
-		<div class="mode-toggle">
-			<button
-				class="mode-btn"
-				class:active={mode === 'buy'}
-				onclick={() => (mode = 'buy')}
-			>
-				Acheter
-			</button>
-			<button
-				class="mode-btn"
-				class:active={mode === 'sell'}
-				onclick={() => (mode = 'sell')}
-			>
-				Vendre
-			</button>
-		</div>
-	</div>
-
 	<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
 		<div class="form-group">
 			<label for="symbol">Symbole</label>
@@ -128,20 +102,6 @@
 				oninput={(e) => (symbol = e.currentTarget.value.toUpperCase())}
 			/>
 		</div>
-
-		{#if mode === 'buy'}
-			<div class="form-group">
-				<label for="name">Nom (optionnel)</label>
-				<input
-					id="name"
-					type="text"
-					bind:value={stockName}
-					placeholder="Ex: Apple Inc."
-					class="input"
-					disabled={isSubmitting}
-				/>
-			</div>
-		{/if}
 
 		<div class="form-row">
 			<div class="form-group">

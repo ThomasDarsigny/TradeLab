@@ -7,8 +7,15 @@ export class QuotesWebSocket {
 	private reconnectAttempts = 0;
 	private maxReconnectAttempts = 5;
 
-	constructor(url: string = 'ws://127.0.0.1:8001/ws/quotes') {
-		this.url = url;
+	constructor(url?: string) {
+		if (url) {
+			this.url = url;
+		} else {
+			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const host = window.location.hostname;
+			const port = '8000';
+			this.url = `${protocol}//${host}:${port}/ws/quotes`;
+		}
 	}
 
 	connect(): Promise<void> {
@@ -17,34 +24,36 @@ export class QuotesWebSocket {
 				this.ws = new WebSocket(this.url);
 
 				this.ws.onopen = () => {
-				console.log(' WebSocket connected - Real-time PUSH mode');
-				this.reconnectAttempts = 0;
-				
-				this.connectionListeners.forEach(listener => listener(true));
-				
-				this.subscribers.forEach((_, symbol) => {
-					this.send({ action: 'subscribe', symbol });
-				});
-				
-				resolve();
-			};
+					console.log('WebSocket connected');
+					this.reconnectAttempts = 0;
+					
+					const symbols = Array.from(this.subscribers.keys());
+					if (symbols.length > 0) {
+						this.send({ symbols });
+					} else {
+						this.send({ symbols: [] });
+					}
+					
+					this.connectionListeners.forEach(listener => listener(true));
+					resolve();
+				};
 
-			this.ws.onmessage = (event) => {
-				try {
-					const data = JSON.parse(event.data);
-					this.handleMessage(data);
-				} catch (error) {
-					console.error('Error parsing message:', error);
-				}
-			};
+				this.ws.onmessage = (event) => {
+					try {
+						const data = JSON.parse(event.data);
+						this.handleMessage(data);
+					} catch (error) {
+						console.error('Error parsing message:', error);
+					}
+				};
 
 				this.ws.onerror = (error) => {
-					console.error(' WebSocket error:', error);
+					console.error('WebSocket error:', error);
 					reject(error);
 				};
 
 				this.ws.onclose = () => {
-					console.log(' WebSocket closed');
+					console.log('WebSocket closed');
 					this.connectionListeners.forEach(listener => listener(false));
 					this.handleReconnect();
 				};
@@ -55,7 +64,7 @@ export class QuotesWebSocket {
 	}
 
 	private handleMessage(data: any) {
-		if (data.type === 'quote' && data.symbol) {
+		if (data.type === 'quote_update' && data.symbol) {
 			const callbacks = this.subscribers.get(data.symbol);
 			if (callbacks) {
 				callbacks.forEach((callback) => callback(data));
@@ -91,12 +100,8 @@ export class QuotesWebSocket {
 		this.subscribers.get(symbol)?.add(callback);
 
 		if (this.ws?.readyState === WebSocket.OPEN) {
-			this.ws.send(
-				JSON.stringify({
-					action: 'subscribe',
-					symbol: symbol.toUpperCase()
-				})
-			);
+			const allSymbols = Array.from(this.subscribers.keys());
+			this.send({ symbols: allSymbols });
 		}
 	}
 
@@ -108,12 +113,10 @@ export class QuotesWebSocket {
 		}
 
 		if (this.ws?.readyState === WebSocket.OPEN) {
-			this.ws.send(
-				JSON.stringify({
-					action: 'unsubscribe',
-					symbol: symbol.toUpperCase()
-				})
-			);
+			const allSymbols = Array.from(this.subscribers.keys());
+			if (allSymbols.length > 0) {
+				this.send({ symbols: allSymbols });
+			}
 		}
 	}
 

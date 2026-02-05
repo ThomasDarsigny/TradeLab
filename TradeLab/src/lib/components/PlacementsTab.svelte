@@ -217,7 +217,7 @@
                 {@const profitLoss = calculateProfitLoss(position)}
                 {@const profitLossPercent =
                     calculateProfitLossPercent(position)}
-                <div class="position-card">
+                <div class="position-card" onclick={() => handleStockSearch(position.symbol)}>
                     <div class="position-header">
                         <div class="symbol-section">
                             <h3 class="symbol">{position.symbol}</h3>
@@ -283,12 +283,6 @@
                             </span>
                         </div>
                     </div>
-
-                    <div class="position-actions">
-                        <button class="btn-sell" onclick={() => openSellForm(position.symbol)}>Vendre</button>
-                        <button class="btn-more">Détails</button>
-                    </div>
-                </div>
             {/each}
         </div>
     {:else}

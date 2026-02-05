@@ -1,32 +1,62 @@
-import yfinance as yf
-import requests
+from yahooquery_service import service
 import time
 
-session = requests.Session()
-session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Referer': 'https://finance.yahoo.com/',
-    'Origin': 'https://finance.yahoo.com',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Connection': 'keep-alive',
-    'DNT': '1'
-})
+print("=" * 60)
+print("TEST YAHOOQUERY SERVICE")
+print("=" * 60)
 
-print(" Attente avant requête...")
-time.sleep(2)
+# Test avec les symboles problématiques
+symbols = ['DOL.TO', 'AAPL']
 
-print(" Récupération des données MSFT...")
-msft = yf.Ticker("MSFT", session=session)
+for symbol in symbols:
+    print(f"\n📊 Test pour {symbol}...")
+    
+    # Test 1: get_quote
+    print(f"  1️⃣  Récupération du quote...")
+    quote = service.get_quote(symbol)
+    if quote:
+        print(f"     ✓ Prix: ${quote['price']:.2f}")
+        print(f"     ✓ Change: {quote['change']:+.2f} ({quote['changePercent']:+.2f}%)")
+    else:
+        print(f"     ✗ Erreur: Pas de quote")
+    
+    time.sleep(1)
+    
+    # Test 2: get_market_data (historique)
+    print(f"  2️⃣  Récupération de l'historique (1 mois)...")
+    data = service.get_market_data(symbol, period='1mo', interval='1d')
+    if data is not None and not data.empty:
+        last_close = data['close'].iloc[-1]
+        first_close = data['close'].iloc[0]
+        print(f"     ✓ {len(data)} jours de données")
+        print(f"     ✓ Premier cours: ${first_close:.2f}")
+        print(f"     ✓ Dernier cours: ${last_close:.2f}")
+    else:
+        print(f"     ✗ Pas de données")
+    
+    time.sleep(1)
+    
+    # Test 3: get_candles
+    print(f"  3️⃣  Récupération des chandeliers...")
+    candles = service.get_candles(symbol, period='1mo', interval='1d')
+    if candles and candles['close']:
+        print(f"     ✓ {len(candles['close'])} chandeliers")
+        print(f"     ✓ Dernier close: ${candles['close'][-1]:.2f}")
+    else:
+        print(f"     ✗ Pas de chandeliers")
+    
+    time.sleep(1)
 
-try:
-    info = msft.fast_info
-    print(f"Nom : {info.get('longName', 'N/A')}")
-    print(f"Prix : ${info.get('lastPrice', 'N/A')}")
-    print(" Yahoo Finance fonctionne!")
-except Exception as e:
-    print(f" Erreur : {e}")
-    print(f"Type : {type(e).__name__}")
+# Test 4: Recherche de symboles
+print(f"\n🔍 Test recherche de symboles...")
+results = service.search_symbols('Apple', limit=5)
+if results:
+    print(f"   ✓ Trouvé {len(results)} résultats")
+    for r in results[:3]:
+        print(f"      - {r['symbol']}: {r['name']}")
+else:
+    print(f"   ✗ Pas de résultats")
+
+print("\n" + "=" * 60)
+print("TESTS TERMINÉS")
+print("=" * 60)

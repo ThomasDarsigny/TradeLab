@@ -193,11 +193,12 @@
     padding: 1.75rem;
     transition: all 0.3s ease;
     position: relative;
+    cursor: pointer;
 }
 
 .position-card:hover {
     box-shadow: var(--shadow-lg);
-    border-color: var(--border-secondary);
+    border-color: var(--accent-primary);
     transform: translateY(-2px);
 }
 
