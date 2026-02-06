@@ -10,6 +10,12 @@
 	let showHeader = $derived(!$page.url.pathname.startsWith('/auth'));
 	let showProfileMenu = $state(false);
 	let currentTheme = $state<'default' | 'light' | 'black'>('default');
+	let showAddFundsModal = $state(false);
+	let addFundsAmount = $state('');
+	let addFundsDescription = $state('');
+	let addFundsError = $state<string | null>(null);
+	let addFundsLoading = $state(false);
+	let addFundsSuccess = $state<string | null>(null);
 
 	onMount(async () => {
 		const { data: { session } } = await supabase.auth.getSession();
@@ -27,8 +33,15 @@
 	});
 
 	async function handleLogout() {
+		showProfileMenu = false;
+		showAddFundsModal = false;
+		addFundsError = null;
+		addFundsSuccess = null;
+		addFundsAmount = '';
+		addFundsDescription = '';
+		userEmail = null;
 		await supabase.auth.signOut();
-		await goto('/auth');
+		await goto('/login');
 	}
 
 	function toggleProfileMenu() {
@@ -47,10 +60,60 @@
 		}
 	}
 
-	async function handleAddFunds() {
+	function handleAddFunds() {
 		showProfileMenu = false;
-		// TODO: Implémenter l'ajout de fonds
-		alert('Fonctionnalité d\'ajout de fonds à venir');
+		addFundsAmount = '';
+		addFundsDescription = '';
+		addFundsError = null;
+		addFundsSuccess = null;
+		showAddFundsModal = true;
+	}
+
+	function closeAddFundsModal() {
+		showAddFundsModal = false;
+		addFundsError = null;
+		addFundsSuccess = null;
+	}
+
+	async function submitAddFunds() {
+		addFundsError = null;
+		addFundsSuccess = null;
+
+		const parsedAmount = Number.parseFloat(addFundsAmount);
+		if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+			addFundsError = 'Veuillez entrer un montant valide.';
+			return;
+		}
+
+		addFundsLoading = true;
+		try {
+			const response = await fetch('/api/account/deposit', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					amount: parsedAmount,
+					description: addFundsDescription || 'Depot',
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				addFundsError = data?.error || 'Erreur lors du depot.';
+				return;
+			}
+
+			addFundsSuccess = 'Fonds ajoutes avec succes.';
+			addFundsAmount = '';
+			addFundsDescription = '';
+		} catch (error) {
+			console.error('Erreur depot:', error);
+			addFundsError = 'Erreur reseau. Veuillez reessayer.';
+		} finally {
+			addFundsLoading = false;
+		}
 	}
 
 	function handleClickOutside(event: MouseEvent) {
@@ -66,14 +129,45 @@
 <div class="app">
 	{#if showHeader}
 		<header class="app-header">
-			<div class="brand">
+			<a href="/" class="brand">
 				<img src="/logo.png" alt="TradeLab Logo" class="logo" style="width: 60px; height: 60px;" />
 				<span>TradeLab</span>
-			</div>
-			<nav class="nav">
-				<a class="nav-item" href="/" data-sveltekit-preload-data="hover">Portefeuille</a>
-				<a class="nav-item" href="/markets" data-sveltekit-preload-data="hover">Marchés</a>
-				<a class="nav-item" href="/news" data-sveltekit-preload-data="hover">Actualités</a>
+			</a>
+			<nav class="nav" aria-label="Navigation principale">
+				<a 
+					class="nav-item" 
+					class:active={$page.url.pathname === '/'} 
+					href="/" 
+					data-sveltekit-preload-data="hover"
+				>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+						<polyline points="9 22 9 12 15 12 15 22"></polyline>
+					</svg>
+					Portefeuille
+				</a>
+				<a 
+					class="nav-item" 
+					class:active={$page.url.pathname === '/markets'} 
+					href="/markets" 
+					data-sveltekit-preload-data="hover"
+				>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+					</svg>
+					Marchés
+				</a>
+				<a 
+					class="nav-item" 
+					class:active={$page.url.pathname === '/news'} 
+					href="/news" 
+					data-sveltekit-preload-data="hover"
+				>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+					</svg>
+					Actualités
+				</a>
 				{#if userEmail}
 					<div class="profile-dropdown">
 						<button class="profile-icon-btn" onclick={toggleProfileMenu} aria-label="Menu profil">
@@ -107,7 +201,7 @@
 								</button>
 								
 					<div class="profile-menu-divider"></div>
-					<div class="theme-section-title">Thème</div>
+					<div class="theme-section-title">Thèmes</div>
 					
 					<button class="profile-menu-item" class:active={currentTheme === 'default'} onclick={() => setTheme('default')}>
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -174,6 +268,64 @@
 	<main class:full-page={!showHeader}>
 		{@render children()}
 	</main>
+
+	{#if showAddFundsModal}
+		<div class="modal-backdrop" role="presentation" onclick={closeAddFundsModal}>
+			<div
+				class="modal-card"
+				role="dialog"
+				aria-modal="true"
+				aria-label="Ajouter des fonds"
+				tabindex="0"
+				onclick={(event) => event.stopPropagation()}
+				onkeydown={(event) => event.stopPropagation()}
+			>
+				<div class="modal-header">
+					<h3>Ajouter des fonds</h3>
+					<button class="modal-close" onclick={closeAddFundsModal} aria-label="Fermer">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<line x1="18" y1="6" x2="6" y2="18"></line>
+							<line x1="6" y1="6" x2="18" y2="18"></line>
+						</svg>
+					</button>
+				</div>
+
+				<form
+					class="modal-form"
+					onsubmit={(event) => {
+						event.preventDefault();
+						submitAddFunds();
+					}}
+				>
+					<label class="modal-label" for="deposit-amount">Montant</label>
+					<input
+						id="deposit-amount"
+						class="modal-input"
+						type="number"
+						min="1"
+						step="0.01"
+						placeholder="0.00"
+						bind:value={addFundsAmount}
+						required
+					/>
+
+					{#if addFundsError}
+						<div class="modal-message error">{addFundsError}</div>
+					{/if}
+					{#if addFundsSuccess}
+						<div class="modal-message success">{addFundsSuccess}</div>
+					{/if}
+
+					<div class="modal-actions">
+						<button class="btn-secondary" type="button" onclick={closeAddFundsModal}>Annuler</button>
+						<button class="btn-primary" type="submit" disabled={addFundsLoading}>
+							{addFundsLoading ? 'Ajout en cours...' : 'Ajouter'}
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -300,6 +452,129 @@
 
 	.profile-menu-item.danger:hover {
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.modal-backdrop {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.5);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		z-index: 1100;
+		backdrop-filter: blur(6px);
+	}
+
+	.modal-card {
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-primary);
+		border-radius: 16px;
+		box-shadow: var(--shadow-xl);
+		width: 420px;
+		max-width: calc(100% - 2rem);
+		padding: 1.5rem;
+		animation: slideDown 0.2s ease-out;
+	}
+
+	.modal-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1rem;
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		color: var(--text-primary);
+	}
+
+	.modal-close {
+		background: transparent;
+		border: none;
+		color: var(--text-secondary);
+		cursor: pointer;
+		padding: 0.25rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.modal-form {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.modal-label {
+		color: var(--text-secondary);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+
+	.modal-input {
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-primary);
+		border-radius: 10px;
+		color: var(--text-primary);
+		padding: 0.75rem 0.875rem;
+		font-size: 0.95rem;
+		outline: none;
+	}
+
+	.modal-input:focus {
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+	}
+
+	.modal-message {
+		padding: 0.75rem;
+		border-radius: 10px;
+		font-size: 0.875rem;
+	}
+
+	.modal-message.error {
+		background: rgba(239, 68, 68, 0.1);
+		color: var(--accent-red);
+		border: 1px solid rgba(239, 68, 68, 0.2);
+	}
+
+	.modal-message.success {
+		background: rgba(16, 185, 129, 0.12);
+		color: var(--accent-green);
+		border: 1px solid rgba(16, 185, 129, 0.2);
+	}
+
+	.modal-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.btn-secondary {
+		background: transparent;
+		border: 1px solid var(--border-secondary);
+		color: var(--text-primary);
+		padding: 0.6rem 1rem;
+		border-radius: 10px;
+		cursor: pointer;
+		font-size: 0.9rem;
+	}
+
+	.btn-primary {
+		background: var(--accent-primary);
+		border: none;
+		color: white;
+		padding: 0.6rem 1.2rem;
+		border-radius: 10px;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
+
+	.btn-primary:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
 	}
 
 	main.full-page {

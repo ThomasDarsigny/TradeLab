@@ -49,7 +49,7 @@
 	max-height: 400px;
 	overflow-y: auto;
 	box-shadow: var(--shadow-xl);
-	z-index: 100;
+	z-index: 10000;
 	animation: slideDown 0.2s ease-out;
 }
 

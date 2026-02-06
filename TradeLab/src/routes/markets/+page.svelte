@@ -431,19 +431,95 @@
 
 
 	.search-section {
-		background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-		border: 1px solid var(--border-primary);
-		border-radius: 20px;
+		position: relative;
+		background: linear-gradient(
+			135deg,
+			rgba(59, 130, 246, 0.15) 0%,
+			rgba(147, 51, 234, 0.1) 50%,
+			rgba(236, 72, 153, 0.15) 100%
+		);
+		border: 1px solid rgba(147, 51, 234, 0.3);
+		border-radius: 24px;
 		padding: 2.5rem;
 		margin-bottom: 3rem;
-		box-shadow: var(--shadow-lg);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		box-shadow: 
+			0 4px 24px rgba(147, 51, 234, 0.2),
+			0 0 80px rgba(59, 130, 246, 0.15),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		overflow: visible;
+		transition: all 0.3s ease;
+		z-index: 100;
+	}
+
+	.search-section::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 100%;
+		background: linear-gradient(
+			135deg,
+			rgba(59, 130, 246, 0.08) 0%,
+			rgba(147, 51, 234, 0.05) 50%,
+			rgba(236, 72, 153, 0.08) 100%
+		);
+		opacity: 0.6;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	.search-section::after {
+		content: '';
+		position: absolute;
+		top: -50%;
+		left: -50%;
+		width: 200%;
+		height: 200%;
+		background: radial-gradient(
+			circle,
+			rgba(147, 51, 234, 0.15) 0%,
+			transparent 70%
+		);
+		animation: rotate-gradient 20s linear infinite;
+		pointer-events: none;
+		z-index: 0;
+	}
+
+	@keyframes rotate-gradient {
+		0% {
+			transform: rotate(0deg);
+		}
+		100% {
+			transform: rotate(360deg);
+		}
+	}
+
+	.search-section:hover {
+		border-color: rgba(147, 51, 234, 0.5);
+		box-shadow: 
+			0 8px 32px rgba(147, 51, 234, 0.3),
+			0 0 120px rgba(59, 130, 246, 0.2),
+			inset 0 1px 0 rgba(255, 255, 255, 0.15);
+		transform: translateY(-2px);
+	}
+
+	.search-wrapper {
+		position: relative;
+		z-index: 100;
 	}
 
 	.search-wrapper h2 {
 		margin: 0 0 1.5rem 0;
-		font-size: 1.3rem;
+		font-size: 1.5rem;
 		color: var(--text-primary);
 		font-weight: 700;
+		background: linear-gradient(135deg, #3b82f6, #9333ea, #ec4899);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
 	}
 
 	.tabs-container {

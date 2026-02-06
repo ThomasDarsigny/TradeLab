@@ -25,11 +25,10 @@
 <div class="news-container">
 	<div class="header">
 		<h1>Actualités Financières</h1>
-		<p>Choisissez une catégorie pour voir les nouvelles pertinentes</p>
 	</div>
 
 	<div class="category-switch">
-		<span class="category-label">Catégorie</span>
+		<span class="category-label">Catégories</span>
 		<div class="tabs" role="tablist" aria-label="Catégories d'actualités">
 			<button
 				class="tab-btn {activeTab === 'gnews' ? 'active' : ''}"

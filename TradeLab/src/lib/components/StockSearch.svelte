@@ -121,7 +121,7 @@
 				{@const logoUrl = getStockLogo(stock.symbol)}
 				<button 
 					class="result-item"
-					onclick={() => handleSelect(stock.symbol)}
+					onmousedown={() => handleSelect(stock.symbol)}
 				>
 					<div class="result-content">
 						{#if logoUrl && !logoErrorSymbols.has(stock.symbol)}
