@@ -1,15 +1,17 @@
 import { supabase } from '$lib/supabaseClient';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Account, Transaction, Position } from '$lib/types/account';
+
+const getClient = (client?: SupabaseClient) => client ?? supabase;
 
 //  GESTION DES COMPTES ------------------------------------------------
 
 /**
  * Crée un nouveau compte de trading pour un utilisateur
- * @param userId
- * @param initialBalance
  */
-export async function createAccount(userId: string, initialBalance: number = 100000) {
-    const { data, error } = await supabase
+export async function createAccount(userId: string, initialBalance: number = 100000, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('accounts')
         .insert({
             user_id: userId,
@@ -30,8 +32,9 @@ export async function createAccount(userId: string, initialBalance: number = 100
 /**
  * Récupère le compte d'un utilisateur
  */
-export async function getAccount(userId: string) {
-    const { data, error } = await supabase
+export async function getAccount(userId: string, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('accounts')
         .select('*')
         .eq('user_id', userId)
@@ -44,8 +47,9 @@ export async function getAccount(userId: string) {
 /**
  * MAJ le solde d'un compte
  */
-export async function updateBalance(accountId: string, newBalance: number) {
-    const { data, error } = await supabase
+export async function updateBalance(accountId: string, newBalance: number, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('accounts')
         .update({ current_balance: newBalance, updated_at: new Date().toISOString() })
         .eq('id', accountId)
@@ -59,8 +63,9 @@ export async function updateBalance(accountId: string, newBalance: number) {
 /**
  * MAJ le solde disponible
  */
-export async function updateAvailableBalance(accountId: string, amount: number) {
-    const { data, error } = await supabase
+export async function updateAvailableBalance(accountId: string, amount: number, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('accounts')
         .update({ available_balance: amount, updated_at: new Date().toISOString() })
         .eq('id', accountId)
@@ -76,8 +81,9 @@ export async function updateAvailableBalance(accountId: string, amount: number) 
 /**
  * Effectue un dépôt d'argent
  */
-export async function deposit(accountId: string, amount: number, description = 'Dépôt') {
-    const { data: account, error: fetchError } = await supabase
+export async function deposit(accountId: string, amount: number, description = 'Dépôt', client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data: account, error: fetchError } = await db
         .from('accounts')
         .select('*')
         .eq('id', accountId)
@@ -85,17 +91,18 @@ export async function deposit(accountId: string, amount: number, description = '
 
     if (fetchError) throw fetchError;
 
-    await addTransaction(accountId, 'deposit', amount, description);
+    await addTransaction(accountId, 'deposit', amount, description, undefined, client);
 
-    const newBalance = account.current_balance + amount;
-    return updateBalance(accountId, newBalance);
+    const newBalance = Number(account.current_balance) + amount;
+    return updateBalance(accountId, newBalance, client);
 }
 
 /**
  * Effectuer un retrait d'argent
  */
-export async function withdraw(accountId: string, amount: number, description = 'Retrait') {
-    const { data: account, error: fetchError } = await supabase
+export async function withdraw(accountId: string, amount: number, description = 'Retrait', client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data: account, error: fetchError } = await db
         .from('accounts')
         .select('*')
         .eq('id', accountId)
@@ -103,17 +110,17 @@ export async function withdraw(accountId: string, amount: number, description = 
 
     if (fetchError) throw fetchError;
 
-    if (account.available_balance < amount) {
+    if (Number(account.available_balance) < amount) {
         throw new Error(`Solde insuffisant. Disponible: ${account.available_balance}, Demandé: ${amount}`);
     }
 
-    await addTransaction(accountId, 'withdrawal', amount, description);
+    await addTransaction(accountId, 'withdrawal', amount, description, undefined, client);
 
-    const newBalance = account.current_balance - amount;
-    const newAvailable = account.available_balance - amount;
+    const newBalance = Number(account.current_balance) - amount;
+    const newAvailable = Number(account.available_balance) - amount;
     
-    await updateBalance(accountId, newBalance);
-    return updateAvailableBalance(accountId, newAvailable);
+    await updateBalance(accountId, newBalance, client);
+    return updateAvailableBalance(accountId, newAvailable, client);
 }
 
 /**
@@ -124,9 +131,11 @@ export async function addTransaction(
     type: 'deposit' | 'withdrawal' | 'buy' | 'sell' | 'dividend',
     amount: number,
     description: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    client?: SupabaseClient
 ) {
-    const { data, error } = await supabase
+    const db = getClient(client);
+    const { data, error } = await db
         .from('transactions')
         .insert({
             account_id: accountId,
@@ -145,8 +154,9 @@ export async function addTransaction(
 /**
  * Récupèrer l'historique des transactions
  */
-export async function getTransactionHistory(accountId: string, limit = 50) {
-    const { data, error } = await supabase
+export async function getTransactionHistory(accountId: string, limit = 50, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('transactions')
         .select('*')
         .eq('account_id', accountId)
@@ -166,11 +176,13 @@ export async function buyStock(
     accountId: string,
     symbol: string,
     quantity: number,
-    entryPrice: number
+    entryPrice: number,
+    client?: SupabaseClient
 ) {
     const totalCost = quantity * entryPrice;
 
-    const { data: account, error: fetchError } = await supabase
+    const db = getClient(client);
+    const { data: account, error: fetchError } = await db
         .from('accounts')
         .select('*')
         .eq('id', accountId)
@@ -178,11 +190,11 @@ export async function buyStock(
 
     if (fetchError) throw fetchError;
 
-    if (account.available_balance < totalCost) {
+    if (Number(account.available_balance) < totalCost) {
         throw new Error(`Solde insuffisant. Nécessaire: ${totalCost}, Disponible: ${account.available_balance}`);
     }
 
-    const { data: existingPosition } = await supabase
+    const { data: existingPosition } = await db
         .from('positions')
         .select('*')
         .eq('account_id', accountId)
@@ -197,7 +209,7 @@ export async function buyStock(
         const newEntryPrice =
             (existingPosition.quantity * existingPosition.entry_price + totalCost) / newQuantity;
 
-        const { data: updated, error } = await supabase
+        const { data: updated, error } = await db
             .from('positions')
             .update({
                 quantity: newQuantity,
@@ -211,7 +223,7 @@ export async function buyStock(
         if (error) throw error;
         position = updated;
     } else {
-        const { data: created, error } = await supabase
+        const { data: created, error } = await db
             .from('positions')
             .insert({
                 account_id: accountId,
@@ -232,13 +244,13 @@ export async function buyStock(
         symbol,
         quantity,
         price: entryPrice,
-    });
+    }, client);
 
-    const newBalance = account.current_balance - totalCost;
-    const newAvailable = account.available_balance - totalCost;
+    const newBalance = Number(account.current_balance) - totalCost;
+    const newAvailable = Number(account.available_balance) - totalCost;
     
-    await updateBalance(accountId, newBalance);
-    await updateAvailableBalance(accountId, newAvailable);
+    await updateBalance(accountId, newBalance, client);
+    await updateAvailableBalance(accountId, newAvailable, client);
 
     return position;
 }
@@ -250,9 +262,11 @@ export async function sellStock(
     accountId: string,
     symbol: string,
     quantity: number,
-    exitPrice: number
+    exitPrice: number,
+    client?: SupabaseClient
 ) {
-    const { data: position, error: posError } = await supabase
+    const db = getClient(client);
+    const { data: position, error: posError } = await db
         .from('positions')
         .select('*')
         .eq('account_id', accountId)
@@ -270,7 +284,7 @@ export async function sellStock(
     const costBasis = quantity * position.entry_price;
     const profitLoss = totalRevenue - costBasis;
 
-    const { data: account, error: fetchError } = await supabase
+    const { data: account, error: fetchError } = await db
         .from('accounts')
         .select('*')
         .eq('id', accountId)
@@ -279,7 +293,7 @@ export async function sellStock(
     if (fetchError) throw fetchError;
 
     if (position.quantity === quantity) {
-        await supabase
+        await db
             .from('positions')
             .update({
                 quantity: 0,
@@ -290,7 +304,7 @@ export async function sellStock(
             .eq('id', position.id);
     } else {
         const newQuantity = position.quantity - quantity;
-        await supabase
+        await db
             .from('positions')
             .update({
                 quantity: newQuantity,
@@ -304,13 +318,13 @@ export async function sellStock(
         quantity,
         price: exitPrice,
         profit_loss: profitLoss,
-    });
+    }, client);
 
-    const newBalance = account.current_balance + totalRevenue;
-    const newAvailable = account.available_balance + totalRevenue;
+    const newBalance = Number(account.current_balance) + totalRevenue;
+    const newAvailable = Number(account.available_balance) + totalRevenue;
     
-    await updateBalance(accountId, newBalance);
-    await updateAvailableBalance(accountId, newAvailable);
+    await updateBalance(accountId, newBalance, client);
+    await updateAvailableBalance(accountId, newAvailable, client);
 
     return {
         position,
@@ -322,8 +336,9 @@ export async function sellStock(
 /**
  * Récupèrer les positions ouvertes
  */
-export async function getOpenPositions(accountId: string) {
-    const { data, error } = await supabase
+export async function getOpenPositions(accountId: string, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('positions')
         .select('*')
         .eq('account_id', accountId)
@@ -336,16 +351,17 @@ export async function getOpenPositions(accountId: string) {
 /**
  * Calculer la valeur totale des positions ouvertes
  */
-export async function calculatePositionValue(accountId: string) {
-    const positions = await getOpenPositions(accountId);
+export async function calculatePositionValue(accountId: string, client?: SupabaseClient) {
+    const positions = await getOpenPositions(accountId, client);
     return positions.reduce((total, pos) => total + pos.quantity * pos.current_price, 0);
 }
 
 /**
  * MAJ le prix actuel des positions
  */
-export async function updatePositionPrice(positionId: string, currentPrice: number) {
-    const { data, error } = await supabase
+export async function updatePositionPrice(positionId: string, currentPrice: number, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
         .from('positions')
         .update({ current_price: currentPrice })
         .eq('id', positionId)
@@ -361,14 +377,15 @@ export async function updatePositionPrice(positionId: string, currentPrice: numb
 /**
  * Calculer les stats du compte
  */
-export async function calculateAccountStats(accountId: string) {
-    const { data: account } = await supabase
+export async function calculateAccountStats(accountId: string, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data: account } = await db
         .from('accounts')
         .select('*')
         .eq('id', accountId)
         .single();
 
-    const { data: transactions } = await supabase
+    const { data: transactions } = await db
         .from('transactions')
         .select('*')
         .eq('account_id', accountId);
@@ -376,13 +393,13 @@ export async function calculateAccountStats(accountId: string) {
     const buyTransactions = (transactions as Transaction[])?.filter((t) => t.type === 'buy') || [];
     const sellTransactions = (transactions as Transaction[])?.filter((t) => t.type === 'sell') || [];
 
-    const totalInvested = buyTransactions.reduce((sum: number, t) => sum + t.amount, 0);
-    const totalReturned = sellTransactions.reduce((sum: number, t) => sum + t.amount, 0);
+    const totalInvested = buyTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
+    const totalReturned = sellTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
     const totalGains = totalReturned - totalInvested;
 
     const gainPercent = totalInvested > 0 ? (totalGains / totalInvested) * 100 : 0;
 
-    const { data: closedTrades } = await supabase
+    const { data: closedTrades } = await db
         .from('positions')
         .select('*')
         .eq('account_id', accountId)
@@ -394,15 +411,15 @@ export async function calculateAccountStats(accountId: string) {
         : 0;
 
     return {
-        initialBalance: account.initial_balance,
-        currentBalance: account.current_balance,
-        availableBalance: account.available_balance,
-        positionValue: await calculatePositionValue(accountId),
-        totalValue: account.current_balance + (await calculatePositionValue(accountId)),
+        initialBalance: Number(account.initial_balance),
+        currentBalance: Number(account.current_balance),
+        availableBalance: Number(account.available_balance),
+        positionValue: await calculatePositionValue(accountId, client),
+        totalValue: Number(account.current_balance) + (await calculatePositionValue(accountId, client)),
         totalGains,
         gainPercent,
         totalTrades: closedTrades?.length || 0,
         winRate,
-        roi: ((account.current_balance - account.initial_balance) / account.initial_balance) * 100,
+        roi: ((Number(account.current_balance) - Number(account.initial_balance)) / Number(account.initial_balance)) * 100,
     };
 }

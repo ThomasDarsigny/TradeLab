@@ -4,6 +4,7 @@ import {
     getTransactionHistory,
     getAccount,
 } from '$lib/services/accountService';
+import { normalizePositions } from '$lib/utils/normalize';
 
 // GET /api/account/positions
 export const GET: RequestHandler = async ({ locals }) => {
@@ -14,16 +15,16 @@ export const GET: RequestHandler = async ({ locals }) => {
             return json({ error: 'Non authentifié' }, { status: 401 });
         }
 
-        const account = await getAccount(session.user.id);
+        const account = await getAccount(session.user.id, locals.supabase);
 
         if (!account) {
             return json({ error: 'Compte non trouvé' }, { status: 404 });
         }
 
-        const positions = await getOpenPositions(account.id);
+        const positions = await getOpenPositions(account.id, locals.supabase);
 
         return json({
-            positions,
+            positions: normalizePositions(positions),
         });
     } catch (error) {
         console.error('Erreur récupération positions:', error);

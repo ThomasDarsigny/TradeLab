@@ -186,6 +186,20 @@
     gap: 1.25rem;
 }
 
+.positions-empty {
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border-primary);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.positions-empty p {
+    margin: 0 0 1.5rem 0;
+    font-size: 1.05rem;
+}
+
 .position-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border-primary);

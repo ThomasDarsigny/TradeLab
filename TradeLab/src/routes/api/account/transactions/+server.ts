@@ -3,6 +3,7 @@ import {
     getTransactionHistory,
     getAccount,
 } from '$lib/services/accountService';
+import { normalizeTransactions } from '$lib/utils/normalize';
 
 // GET /api/account/transactions
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -13,17 +14,17 @@ export const GET: RequestHandler = async ({ locals, url }) => {
             return json({ error: 'Non authentifié' }, { status: 401 });
         }
 
-        const account = await getAccount(session.user.id);
+        const account = await getAccount(session.user.id, locals.supabase);
 
         if (!account) {
             return json({ error: 'Compte non trouvé' }, { status: 404 });
         }
 
         const limit = parseInt(url.searchParams.get('limit') || '50');
-        const transactions = await getTransactionHistory(account.id, limit);
+        const transactions = await getTransactionHistory(account.id, limit, locals.supabase);
 
         return json({
-            transactions,
+            transactions: normalizeTransactions(transactions),
         });
     } catch (error) {
         console.error('Erreur récupération transactions:', error);

@@ -54,6 +54,30 @@ form {
 	gap: 0.5rem;
 }
 
+.label-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+}
+
+.max-btn {
+	border: 1px solid var(--border-primary);
+	background: var(--bg-tertiary);
+	color: var(--text-primary);
+	border-radius: 999px;
+	padding: 0.2rem 0.75rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.max-btn:hover {
+	background: var(--bg-primary);
+	border-color: var(--accent-primary);
+}
+
 .form-row {
 	display: grid;
 	grid-template-columns: 1fr 1fr;

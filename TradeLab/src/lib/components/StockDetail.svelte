@@ -2,6 +2,7 @@
 	import TradeForm from './TradeForm.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { Chart, registerables } from 'chart.js';
+	import { watchlist, addToWatchlist, removeFromWatchlist } from '$lib/stores/market';
 	import './StockDetail.css';
 
 	Chart.register(...registerables);
@@ -33,6 +34,7 @@
 	let chartError = $state('');
 	let chartContainer: HTMLCanvasElement | undefined = $state();
 	let chart: Chart | null = $state(null);
+	let isInWatchlist = $derived($watchlist.includes(symbol.toUpperCase()));
 
 	function isMarketOpen(): { stock: boolean; crypto: boolean } {
 		const now = new Date();
@@ -237,6 +239,15 @@
 		}
 		return num.toLocaleString('fr-FR');
 	}
+
+	function toggleWatchlist() {
+		if (!symbol) return;
+		if (isInWatchlist) {
+			removeFromWatchlist(symbol);
+			return;
+		}
+		addToWatchlist(symbol);
+	}
 </script>
 
 <div 
@@ -271,6 +282,14 @@
 				</div>
 			</div>
 			<div class="header-actions">
+				<button
+					class="btn-watchlist-detail {isInWatchlist ? 'active' : ''}"
+					onclick={toggleWatchlist}
+					aria-label="Gerer la watchlist"
+					title={isInWatchlist ? 'Retirer de ma watchlist' : 'Ajouter a ma watchlist'}
+				>
+					{isInWatchlist ? '★' : '☆'}
+				</button>
 				<button class="btn-close-detail" onclick={() => onClose()} aria-label="Fermer">
 					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 						<line x1="18" y1="6" x2="6" y2="18"></line>
@@ -410,7 +429,12 @@
 							{/if}
 						</div>
 
-						<TradeForm mode={tradeMode} prefilledSymbol={symbol} />
+						<TradeForm
+							mode={tradeMode}
+							prefilledSymbol={symbol}
+							lockedPrice={stockData.price}
+							showSymbolField={false}
+						/>
 					</div>
 				</div>
 			</div>

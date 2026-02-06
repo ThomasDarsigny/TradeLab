@@ -3,6 +3,7 @@ import {
     withdraw,
     getAccount,
 } from '$lib/services/accountService';
+import { normalizeAccount } from '$lib/utils/normalize';
 
 // POST /api/account/transactions/withdraw
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -19,17 +20,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             return json({ error: 'Montant invalide' }, { status: 400 });
         }
 
-        const account = await getAccount(session.user.id);
+        const account = await getAccount(session.user.id, locals.supabase);
 
         if (!account) {
             return json({ error: 'Compte non trouvé' }, { status: 404 });
         }
 
-        const updatedAccount = await withdraw(account.id, amount, description || 'Retrait');
+        const updatedAccount = await withdraw(account.id, amount, description || 'Retrait', locals.supabase);
 
         return json({
             message: 'Retrait effectué avec succès',
-            account: updatedAccount,
+            account: normalizeAccount(updatedAccount),
         });
     } catch (error) {
         console.error('Erreur retrait:', error);

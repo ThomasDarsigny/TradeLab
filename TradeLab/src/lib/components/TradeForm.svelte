@@ -1,12 +1,18 @@
 <script lang="ts">
-	import { portfolio } from '$lib/stores/portfolio.svelte';
+	import { accountStore, setAccount } from '$lib/stores/account';
 	import './TradeForm.css';
 
 	let {
 		mode = $bindable('buy') as 'buy' | 'sell',
-		prefilledSymbol = ''
-	} = $props();
-
+		prefilledSymbol = '',
+		lockedPrice = 0,
+		showSymbolField = true,
+	} = $props<{
+		mode?: 'buy' | 'sell';
+		prefilledSymbol?: string;
+		lockedPrice?: number;
+		showSymbolField?: boolean;
+	}>();
 	let symbol = $state('');
 	let quantity = $state(1);
 	let price = $state(0);
@@ -14,42 +20,89 @@
 	$effect(() => {
 		symbol = prefilledSymbol;
 	});
+
+	$effect(() => {
+		if (lockedPrice > 0) {
+			price = lockedPrice;
+		}
+	});
 	let stockName = $state('');
 	let error = $state('');
 	let success = $state('');
 	let isSubmitting = $state(false);
 
-	let totalAmount = $derived(quantity * price);
+	let effectivePrice = $derived(lockedPrice > 0 ? lockedPrice : price);
+	let totalAmount = $derived(quantity * effectivePrice);
 
-	let canAfford = $derived(mode === 'buy' ? totalAmount <= portfolio.cash : true);
-
-	let existingPosition = $derived(
-		mode === 'sell' ? portfolio.getPosition(symbol.toUpperCase()) : undefined
-	);
-
-	let hasEnoughShares = $derived(
-		mode === 'sell' ? existingPosition && quantity <= existingPosition.quantity : true
-	);
+	let availableCash = $derived($accountStore?.available_balance ?? 0);
+	let canAfford = $derived(mode === 'buy' ? totalAmount <= availableCash : true);
+	const quantityStep = 0.000001;
+	const clampQuantity = (value: number) => {
+		if (!Number.isFinite(value)) return 0;
+		return Math.max(0, Math.floor(value / quantityStep) * quantityStep);
+	};
+	let maxQuantity = $derived(effectivePrice > 0 ? clampQuantity(availableCash / effectivePrice) : 0);
+	let sellLimit = $state(0);
+	let sellLoading = $state(false);
+	let maxSellQuantity = $derived(clampQuantity(sellLimit));
 
 	let validationError = $derived.by(() => {
 		if (!symbol.trim()) return 'Symbole requis';
 		if (quantity <= 0) return 'La quantité doit être positive';
-		if (price <= 0) return 'Le prix doit être positif';
+		if (effectivePrice <= 0) return 'Le prix doit être positif';
 		if (mode === 'buy' && !canAfford) {
-			return `Fonds insuffisants (disponible: ${portfolio.cash.toFixed(2)}$)`;
+			return `Fonds insuffisants (disponible: ${availableCash.toFixed(2)}$)`;
 		}
-		if (mode === 'sell' && !existingPosition) {
+		if (mode === 'sell' && !sellLoading && maxSellQuantity === 0) {
 			return `Aucune position pour ${symbol.toUpperCase()}`;
 		}
-		if (mode === 'sell' && !hasEnoughShares && existingPosition) {
-			return `Quantité insuffisante (vous avez ${existingPosition.quantity} actions)`;
+		if (mode === 'sell' && maxSellQuantity > 0 && quantity > maxSellQuantity) {
+			return `Quantité insuffisante (vous avez ${maxSellQuantity} actions)`;
 		}
 		return '';
 	});
 
 	let canSubmit = $derived(!validationError && !isSubmitting && symbol.trim() !== '');
 
-	function handleSubmit() {
+	function applyMaxQuantity() {
+		if (mode === 'buy') {
+			quantity = maxQuantity > 0 ? maxQuantity : quantityStep;
+			return;
+		}
+		if (mode === 'sell') {
+			quantity = maxSellQuantity > 0 ? maxSellQuantity : quantityStep;
+		}
+	}
+
+	async function refreshSellLimit() {
+		sellLoading = true;
+		try {
+			const response = await fetch('/api/account/positions', { credentials: 'include' });
+			if (!response.ok) {
+				sellLimit = 0;
+				return;
+			}
+			const data = await response.json();
+			const match = (data.positions || []).find((pos: any) =>
+				String(pos.symbol).toUpperCase() === symbol.toUpperCase()
+			);
+			sellLimit = match ? Number(match.quantity) : 0;
+		} catch (err) {
+			sellLimit = 0;
+		} finally {
+			sellLoading = false;
+		}
+	}
+
+	$effect(() => {
+		if (mode !== 'sell' || !symbol.trim()) {
+			sellLimit = 0;
+			return;
+		}
+		refreshSellLimit();
+	});
+
+	async function handleSubmit() {
 		if (!canSubmit) return;
 
 		error = '';
@@ -60,11 +113,47 @@
 			const upperSymbol = symbol.toUpperCase();
 
 			if (mode === 'buy') {
-				portfolio.buyStock(upperSymbol, stockName || upperSymbol, quantity, price);
-				success = `Achat réussi : ${quantity} ${upperSymbol} à ${price.toFixed(2)}$`;
+				const response = await fetch('/api/account/trades/buy', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({
+						symbol: upperSymbol,
+						quantity,
+						entryPrice: effectivePrice,
+					}),
+				});
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data?.error || 'Erreur lors de l\'achat');
+				}
+
+				success = `Achat réussi : ${quantity} ${upperSymbol} à ${effectivePrice.toFixed(2)}$`;
 			} else {
-				portfolio.sellStock(upperSymbol, quantity, price);
-				success = `Vente réussie : ${quantity} ${upperSymbol} à ${price.toFixed(2)}$`;
+				const response = await fetch('/api/account/trades/sell', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					credentials: 'include',
+					body: JSON.stringify({
+						symbol: upperSymbol,
+						quantity,
+						exitPrice: effectivePrice,
+					}),
+				});
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data?.error || 'Erreur lors de la vente');
+				}
+
+				success = `Vente réussie : ${quantity} ${upperSymbol} à ${effectivePrice.toFixed(2)}$`;
+			}
+
+			const accountResponse = await fetch('/api/account', { credentials: 'include' });
+			if (accountResponse.ok) {
+				const accountData = await accountResponse.json();
+				setAccount(accountData.account);
 			}
 
 			setTimeout(() => {
@@ -90,28 +179,37 @@
 
 <div class="trade-form">
 	<form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-		<div class="form-group">
-			<label for="symbol">Symbole</label>
-			<input
-				id="symbol"
-				type="text"
-				bind:value={symbol}
-				placeholder="Ex: AAPL, TSLA..."
-				class="input"
-				disabled={isSubmitting}
-				oninput={(e) => (symbol = e.currentTarget.value.toUpperCase())}
-			/>
-		</div>
+		{#if showSymbolField}
+			<div class="form-group">
+				<label for="symbol">Symbole</label>
+				<input
+					id="symbol"
+					type="text"
+					bind:value={symbol}
+					placeholder="Ex: AAPL, TSLA..."
+					class="input"
+					disabled={isSubmitting}
+					oninput={(e) => (symbol = e.currentTarget.value.toUpperCase())}
+				/>
+			</div>
+		{/if}
 
 		<div class="form-row">
 			<div class="form-group">
-				<label for="quantity">Quantité</label>
+				<div class="label-row">
+					<label for="quantity">Quantité</label>
+					{#if mode === 'buy' || mode === 'sell'}
+						<button type="button" class="max-btn" onclick={applyMaxQuantity}>
+							Max
+						</button>
+					{/if}
+				</div>
 				<input
 					id="quantity"
 					type="number"
 					bind:value={quantity}
-					min="1"
-					step="1"
+					min={quantityStep}
+					step={quantityStep}
 					class="input"
 					disabled={isSubmitting}
 				/>
@@ -126,17 +224,12 @@
 					min="0.01"
 					step="0.01"
 					class="input"
-					disabled={isSubmitting}
+					disabled={isSubmitting || lockedPrice > 0}
 				/>
 			</div>
 		</div>
 
-		{#if existingPosition && mode === 'sell'}
-			<div class="position-info">
-				<span>Position actuelle : {existingPosition.quantity} actions</span>
-				<span>Prix moyen : {existingPosition.averagePrice.toFixed(2)}$</span>
-			</div>
-		{/if}
+
 
 		<div class="calculation">
 			<div class="calc-row">
@@ -145,15 +238,11 @@
 					{mode === 'buy' ? '-' : '+'}{totalAmount.toFixed(2)}$
 				</span>
 			</div>
-			<div class="calc-row">
-				<span>Cash disponible</span>
-				<span class="cash">{portfolio.cash.toFixed(2)}$</span>
-			</div>
 			{#if mode === 'buy'}
 				<div class="calc-row final">
 					<span>Après transaction</span>
 					<span class="result" class:negative={!canAfford}>
-						{(portfolio.cash - totalAmount).toFixed(2)}$
+						{(availableCash - totalAmount).toFixed(2)}$
 					</span>
 				</div>
 			{/if}

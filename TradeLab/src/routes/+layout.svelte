@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import { supabase } from '$lib/supabaseClient';
+	import { setAccount, clearAccount } from '$lib/stores/account';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -17,19 +18,38 @@
 	let addFundsLoading = $state(false);
 	let addFundsSuccess = $state<string | null>(null);
 
-	onMount(async () => {
-		const { data: { session } } = await supabase.auth.getSession();
-		userEmail = session?.user?.email || null;
+	onMount(() => {
+		const refreshUser = async () => {
+			const { data: { user } } = await supabase.auth.getUser();
+			userEmail = user?.email || null;
+		};
 
-		supabase.auth.onAuthStateChange((_event: string, session: any) => {
-			userEmail = session?.user?.email || null;
+		refreshUser();
+
+		supabase.auth.onAuthStateChange(async (event: string) => {
+			await refreshUser();
+			if (event === 'SIGNED_OUT') {
+				goto('/auth');
+			}
 		});
+
+		const handleFocus = () => {
+			refreshUser();
+		};
+
+		window.addEventListener('focus', handleFocus);
+		document.addEventListener('visibilitychange', handleFocus);
 
 		const savedTheme = localStorage.getItem('theme') as 'default' | 'light' | 'black' || 'default';
 		currentTheme = savedTheme;
 		if (savedTheme !== 'default') {
 			document.documentElement.setAttribute('data-theme', savedTheme);
 		}
+
+		return () => {
+			window.removeEventListener('focus', handleFocus);
+			document.removeEventListener('visibilitychange', handleFocus);
+		};
 	});
 
 	async function handleLogout() {
@@ -40,8 +60,9 @@
 		addFundsAmount = '';
 		addFundsDescription = '';
 		userEmail = null;
+		clearAccount();
 		await supabase.auth.signOut();
-		await goto('/login');
+		await goto('/auth');
 	}
 
 	function toggleProfileMenu() {
@@ -108,6 +129,9 @@
 			addFundsSuccess = 'Fonds ajoutes avec succes.';
 			addFundsAmount = '';
 			addFundsDescription = '';
+			if (data?.account) {
+				setAccount(data.account);
+			}
 		} catch (error) {
 			console.error('Erreur depot:', error);
 			addFundsError = 'Erreur reseau. Veuillez reessayer.';

@@ -3,8 +3,10 @@ import {
     deposit,
     withdraw,
     getTransactionHistory,
+    getAccount,
+    createAccount,
 } from '$lib/services/accountService';
-import { getAccount } from '$lib/services/accountService';
+import { normalizeAccount } from '$lib/utils/normalize';
 
 // POST /api/account/transactions/deposit
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -21,17 +23,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             return json({ error: 'Montant invalide' }, { status: 400 });
         }
 
-        const account = await getAccount(session.user.id);
+        const account = await getAccount(session.user.id, locals.supabase);
+        const ensuredAccount = account ?? await createAccount(session.user.id, 100000, locals.supabase);
 
-        if (!account) {
-            return json({ error: 'Compte non trouvé' }, { status: 404 });
-        }
-
-        const updatedAccount = await deposit(account.id, amount, description || 'Dépôt');
+        const updatedAccount = await deposit(ensuredAccount.id, amount, description || 'Dépôt', locals.supabase);
 
         return json({
             message: 'Dépôt effectué avec succès',
-            account: updatedAccount,
+            account: normalizeAccount(updatedAccount),
         });
     } catch (error) {
         console.error('Erreur dépôt:', error);

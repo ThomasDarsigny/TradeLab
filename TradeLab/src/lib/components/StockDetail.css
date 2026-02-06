@@ -69,6 +69,29 @@
 	gap: 1rem;
 }
 
+.btn-watchlist-detail {
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border-secondary);
+	color: var(--text-primary);
+	cursor: pointer;
+	padding: 0.75rem 0.9rem;
+	border-radius: 12px;
+	font-size: 1.25rem;
+	line-height: 1;
+	transition: all 0.2s ease;
+}
+
+.btn-watchlist-detail:hover {
+	border-color: var(--accent-primary);
+	box-shadow: 0 8px 20px rgba(59, 130, 246, 0.2);
+}
+
+.btn-watchlist-detail.active {
+	color: #facc15;
+	border-color: rgba(250, 204, 21, 0.6);
+	background: rgba(250, 204, 21, 0.1);
+}
+
 .market-status-detail {
 	display: flex;
 	align-items: center;
@@ -161,7 +184,7 @@
 .btn-close-detail {
 	background: var(--bg-tertiary);
 	border: 1px solid var(--border-secondary);
-	color: var(--text-muted);
+	color: var(--text-primary);
 	cursor: pointer;
 	padding: 0.75rem;
 	border-radius: 12px;

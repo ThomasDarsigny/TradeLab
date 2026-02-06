@@ -19,6 +19,15 @@
         }
     });
 
+    function getChartColors() {
+        const styles = getComputedStyle(document.documentElement);
+        return {
+            textPrimary: styles.getPropertyValue('--text-primary').trim() || '#111827',
+            textSecondary: styles.getPropertyValue('--text-secondary').trim() || '#4b5563',
+            borderPrimary: styles.getPropertyValue('--border-primary').trim() || 'rgba(0, 0, 0, 0.1)',
+        };
+    }
+
     function updateCharts() {
         updateProfitChart();
         updateAllocationChart();
@@ -39,6 +48,8 @@
         if (profitChart) {
             profitChart.destroy();
         }
+
+        const colors = getChartColors();
 
         profitChart = new Chart(ctx, {
             type: 'bar',
@@ -63,7 +74,7 @@
                     legend: {
                         display: true,
                         labels: {
-                            color: 'rgba(255, 255, 255, 0.8)',
+                            color: colors.textPrimary,
                             font: { size: 12 }
                         }
                     },
@@ -79,21 +90,21 @@
                     x: {
                         stacked: false,
                         ticks: {
-                            color: 'rgba(255, 255, 255, 0.6)',
+                            color: colors.textSecondary,
                             callback: function(value: any) {
                                 return '$' + value.toFixed(0);
                             }
                         },
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: colors.borderPrimary
                         }
                     },
                     y: {
                         ticks: {
-                            color: 'rgba(255, 255, 255, 0.8)'
+                            color: colors.textSecondary
                         },
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: colors.borderPrimary
                         }
                     }
                 }
@@ -106,7 +117,7 @@
 
         const totalValue = positions.reduce((sum, pos) => sum + pos.quantity * pos.current_price, 0);
         const data = positions.map(pos => (pos.quantity * pos.current_price / totalValue) * 100);
-        const colors = [
+        const palette = [
             'rgba(59, 130, 246, 0.8)',
             'rgba(16, 185, 129, 0.8)',
             'rgba(139, 92, 246, 0.8)',
@@ -124,6 +135,8 @@
             allocationChart.destroy();
         }
 
+        const themeColors = getChartColors();
+
         allocationChart = new Chart(ctx, {
             type: 'doughnut',
             data: {
@@ -131,7 +144,7 @@
                 datasets: [
                     {
                         data: data,
-                        backgroundColor: colors.slice(0, positions.length),
+                        backgroundColor: palette.slice(0, positions.length),
                         borderColor: 'rgba(31, 41, 55, 1)',
                         borderWidth: 2
                     }
@@ -144,7 +157,7 @@
                     legend: {
                         position: 'bottom',
                         labels: {
-                            color: 'rgba(255, 255, 255, 0.8)',
+                            color: themeColors.textPrimary,
                             font: { size: 12 },
                             padding: 15
                         }
@@ -166,7 +179,16 @@
             updateCharts();
         }
 
+        const observer = new MutationObserver(() => {
+            if (positions.length > 0) {
+                updateCharts();
+            }
+        });
+
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
         return () => {
+            observer.disconnect();
             if (profitChart) profitChart.destroy();
             if (allocationChart) allocationChart.destroy();
         };

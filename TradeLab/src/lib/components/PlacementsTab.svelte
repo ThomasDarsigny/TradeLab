@@ -5,12 +5,19 @@
     import StockDetail from "./StockDetail.svelte";
     import PortfolioCharts from "./PortfolioCharts.svelte";
     import { QuotesWebSocket } from "$lib/services/quotesWebSocket";
+    import { accountStore, setAccount } from "$lib/stores/account";
     import "./PlacementsTab.css";
 
     let positions: Position[] = $state([]);
     let loading = $state(true);
     let totalValue = $state(0);
     let accountBalance = $state(0);
+    let availableBalance = $state(0);
+    $effect(() => {
+        const account = $accountStore;
+        accountBalance = account?.current_balance ?? 0;
+        availableBalance = account?.available_balance ?? 0;
+    });
     let showTradeForm = $state(false);
     let tradeMode: "buy" | "sell" = $state("buy");
     let selectedSymbol = $state("");
@@ -95,33 +102,38 @@
     async function loadPositions() {
         loading = true;
         try {
-            const response = await fetch("/api/account/positions", { credentials: 'include' });
-            if (response.ok) {
-                const data = await response.json();
-                
-                if (ws) {
-                    positions.forEach(pos => ws?.unsubscribe(pos.symbol));
-                }
-                
-                positions = data.positions;
-                totalValue = positions.reduce(
-                    (sum, pos) => sum + pos.quantity * pos.current_price,
-                    0,
-                );
+            if (ws) {
+                positions.forEach(pos => ws?.unsubscribe(pos.symbol));
+            }
 
-                const accountResponse = await fetch("/api/account", { credentials: 'include' });
-                if (accountResponse.ok) {
-                    const accountData = await accountResponse.json();
-                    accountBalance = accountData.account.current_balance;
-                }
-                
-                if (ws) {
-                    positions.forEach(pos => {
-                        ws?.subscribe(pos.symbol, (data) => {
-                            updatePositionPrice(pos.symbol, data.price);
-                        });
+            const [positionsResponse, accountResponse] = await Promise.all([
+                fetch("/api/account/positions", { credentials: 'include' }),
+                fetch("/api/account", { credentials: 'include' }),
+            ]);
+
+            if (positionsResponse.ok) {
+                const data = await positionsResponse.json();
+                positions = data.positions || [];
+            } else {
+                positions = [];
+            }
+
+            totalValue = positions.reduce(
+                (sum, pos) => sum + pos.quantity * pos.current_price,
+                0,
+            );
+
+            if (accountResponse.ok) {
+                const accountData = await accountResponse.json();
+                setAccount(accountData.account);
+            }
+
+            if (ws && positions.length > 0) {
+                positions.forEach(pos => {
+                    ws?.subscribe(pos.symbol, (data) => {
+                        updatePositionPrice(pos.symbol, data.price);
                     });
-                }
+                });
             }
         } catch (error) {
             console.error("Erreur:", error);
@@ -149,7 +161,7 @@
 <div class="placements-container">
     <div class="placements-header">
         <div class="header-content">
-            <h2>Mes Positions</h2>
+            <h2>Portefeuille</h2>
         </div>
     </div>
 
@@ -185,12 +197,12 @@
 
     {#if loading}
         <div class="loading">Chargement de vos positions...</div>
-    {:else if positions.length > 0}
+    {:else}
         <div class="portfolio-summary">
             <div class="summary-card">
-                <div class="summary-label">Solde du Compte</div>
+                <div class="summary-label">Solde Disponible</div>
                 <div class="summary-value">
-                    ${accountBalance.toLocaleString("fr-FR", {
+                    ${availableBalance.toLocaleString("fr-FR", {
                         maximumFractionDigits: 2,
                     })}
                 </div>
@@ -204,88 +216,96 @@
                 </div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Positions Ouvertes</div>
-                <div class="summary-value">{positions.length}</div>
+                <div class="summary-label">Valeur Totale</div>
+                <div class="summary-value">
+                    ${(availableBalance + totalValue).toLocaleString("fr-FR", {
+                        maximumFractionDigits: 2,
+                    })}
+                </div>
             </div>
         </div>
 
-        <PortfolioCharts {positions} {accountBalance} />
+        {#if positions.length > 0}
+            <PortfolioCharts {positions} {accountBalance} />
 
-        <div class="positions-list">
-            {#each positions as position (position.id)}
-                {@const profitLoss = calculateProfitLoss(position)}
-                {@const profitLossPercent =
-                    calculateProfitLossPercent(position)}
-                <button class="position-card" onclick={() => handleStockSearch(position.symbol)}>
-                    <div class="position-header">
-                        <div class="symbol-section">
-                            <h3 class="symbol">{position.symbol}</h3>
-                            <span class="status-badge"
-                                >{position.quantity} shares</span
-                            >
-                        </div>
-                        <div class="price-section">
-                            <div class="current-price">
-                                ${position.current_price.toFixed(2)}
+            <div class="positions-list">
+                {#each positions as position (position.id)}
+                    {@const profitLoss = calculateProfitLoss(position)}
+                    {@const profitLossPercent =
+                        calculateProfitLossPercent(position)}
+                    <button class="position-card" onclick={() => handleStockSearch(position.symbol)}>
+                        <div class="position-header">
+                            <div class="symbol-section">
+                                <h3 class="symbol">{position.symbol}</h3>
+                                <span class="status-badge"
+                                    >{position.quantity} shares</span
+                                >
                             </div>
-                            <div
-                                class="price-change"
-                                class:positive={profitLossPercent > 0}
-                                class:negative={profitLossPercent < 0}
-                            >
-                                {profitLossPercent > 0
-                                    ? "+"
-                                    : ""}{profitLossPercent.toFixed(2)}%
+                            <div class="price-section">
+                                <div class="current-price">
+                                    ${position.current_price.toFixed(2)}
+                                </div>
+                                <div
+                                    class="price-change"
+                                    class:positive={profitLossPercent > 0}
+                                    class:negative={profitLossPercent < 0}
+                                >
+                                    {profitLossPercent > 0
+                                        ? "+"
+                                        : ""}{profitLossPercent.toFixed(2)}%
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="position-details">
-                        <div class="detail-row">
-                            <span class="detail-label">Prix d'Entrée</span>
-                            <span class="detail-value"
-                                >${position.entry_price.toFixed(2)}</span
-                            >
+                        <div class="position-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Prix d'Entrée</span>
+                                <span class="detail-value"
+                                    >${position.entry_price.toFixed(2)}</span
+                                >
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Montant Investi</span>
+                                <span class="detail-value"
+                                    >${(
+                                        position.quantity * position.entry_price
+                                    ).toLocaleString("fr-FR", {
+                                        maximumFractionDigits: 2,
+                                    })}</span
+                                >
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Valeur Actuelle</span>
+                                <span class="detail-value">
+                                    ${(
+                                        position.quantity * position.current_price
+                                    ).toLocaleString("fr-FR", {
+                                        maximumFractionDigits: 2,
+                                    })}
+                                </span>
+                            </div>
+                            <div class="detail-row profit-loss">
+                                <span class="detail-label">Gain/Perte</span>
+                                <span
+                                    class="detail-value"
+                                    class:positive={profitLoss > 0}
+                                    class:negative={profitLoss < 0}
+                                >
+                                    {profitLoss > 0
+                                        ? "+"
+                                        : ""}{profitLoss.toLocaleString("fr-FR", {
+                                        maximumFractionDigits: 2,
+                                    })}$
+                                </span>
+                            </div>
                         </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Montant Investi</span>
-                            <span class="detail-value"
-                                >${(
-                                    position.quantity * position.entry_price
-                                ).toLocaleString("fr-FR", {
-                                    maximumFractionDigits: 2,
-                                })}</span
-                            >
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Valeur Actuelle</span>
-                            <span class="detail-value">
-                                ${(
-                                    position.quantity * position.current_price
-                                ).toLocaleString("fr-FR", {
-                                    maximumFractionDigits: 2,
-                                })}
-                            </span>
-                        </div>
-                        <div class="detail-row profit-loss">
-                            <span class="detail-label">Gain/Perte</span>
-                            <span
-                                class="detail-value"
-                                class:positive={profitLoss > 0}
-                                class:negative={profitLoss < 0}
-                            >
-                                {profitLoss > 0
-                                    ? "+"
-                                    : ""}{profitLoss.toLocaleString("fr-FR", {
-                                    maximumFractionDigits: 2,
-                                })}$
-                            </span>
-                        </div>
-                    </div>
-                </button>
-            {/each}
-        </div>
-    {:else}
-        <div class="empty-state">Aucune position ouverte.</div>
+                    </button>
+                {/each}
+            </div>
+        {:else}
+            <div class="positions-empty">
+                <p>Les titres que vous détenez s'afficheront ici.</p>
+            </div>
+        {/if}
     {/if}
 </div>

@@ -138,7 +138,7 @@ class PortfolioStore {
 		const position = this.positions.find(p => p.symbol === symbol);
 
 		if (!position) {
-			throw new Error(`Aucune position trouvée pour ${symbol}`);
+			throw new Error(`Aucun titre trouvé pour ${symbol}`);
 		}
 
 		if (quantity > position.quantity) {

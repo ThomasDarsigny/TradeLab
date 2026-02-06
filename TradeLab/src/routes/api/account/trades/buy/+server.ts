@@ -3,6 +3,7 @@ import {
     buyStock,
     getAccount,
 } from '$lib/services/accountService';
+import { normalizePosition } from '$lib/utils/normalize';
 
 // POST /api/account/trades/buy
 export const POST: RequestHandler = async ({ request, locals }) => {
@@ -23,17 +24,17 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             return json({ error: 'Quantité et prix doivent être positifs' }, { status: 400 });
         }
 
-        const account = await getAccount(session.user.id);
+        const account = await getAccount(session.user.id, locals.supabase);
 
         if (!account) {
             return json({ error: 'Compte non trouvé' }, { status: 404 });
         }
 
-        const position = await buyStock(account.id, symbol.toUpperCase(), quantity, entryPrice);
+        const position = await buyStock(account.id, symbol.toUpperCase(), quantity, entryPrice, locals.supabase);
 
         return json({
             message: 'Achat effectué avec succès',
-            position,
+            position: normalizePosition(position),
         });
     } catch (error) {
         console.error('Erreur achat:', error);

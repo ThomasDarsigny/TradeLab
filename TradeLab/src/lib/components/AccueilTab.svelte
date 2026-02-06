@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Account } from '$lib/types/account';
+	import { normalizeAccount, setAccount } from '$lib/stores/account';
 	import './AccueilTab.css';
 
 	let account: Account | null = null;
@@ -12,7 +13,8 @@
 			const response = await fetch('/api/account', { credentials: 'include' });
 			if (response.ok) {
 				const data = await response.json();
-				account = data.account;
+				account = normalizeAccount(data.account);
+				setAccount(account);
 				stats = data.stats;
 			}
 		} catch (error) {

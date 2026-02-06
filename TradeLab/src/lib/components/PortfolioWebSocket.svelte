@@ -277,14 +277,24 @@
     right: 0.5rem;
     cursor: pointer;
     font-size: 1.5rem;
-    color: #dc3545;
+    color: var(--accent-red);
     font-weight: bold;
-    opacity: 0.5;
-    transition: opacity 0.2s;
+    opacity: 0.9;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 999px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s, background 0.2s, border-color 0.2s;
   }
 
   .close-btn:hover {
     opacity: 1;
+    background: var(--bg-hover);
+    border-color: var(--border-secondary);
   }
 
   .symbol {
