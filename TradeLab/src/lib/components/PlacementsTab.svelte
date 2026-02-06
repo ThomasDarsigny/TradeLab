@@ -150,7 +150,6 @@
     <div class="placements-header">
         <div class="header-content">
             <h2>Mes Positions</h2>
-            <p>Actions que vous possédez actuellement</p>
         </div>
     </div>
 
@@ -217,7 +216,7 @@
                 {@const profitLoss = calculateProfitLoss(position)}
                 {@const profitLossPercent =
                     calculateProfitLossPercent(position)}
-                <div class="position-card" onclick={() => handleStockSearch(position.symbol)}>
+                <button class="position-card" onclick={() => handleStockSearch(position.symbol)}>
                     <div class="position-header">
                         <div class="symbol-section">
                             <h3 class="symbol">{position.symbol}</h3>
@@ -283,7 +282,7 @@
                             </span>
                         </div>
                     </div>
-                </div>
+                </button>
             {/each}
         </div>
     {:else}

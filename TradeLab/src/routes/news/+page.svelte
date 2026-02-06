@@ -18,7 +18,7 @@
 </script>
 
 <svelte:head>
-	<title>Actualités financières - TradeLab</title>
+	<title>TradeLab - Actualités</title>
 	<meta name="description" content="Dernières nouvelles des marchés financiers" />
 </svelte:head>
 

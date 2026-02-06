@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-	<title>TradeLab - Paper Trading</title>
+	<title>TradeLab - Portefeuille</title>
 	<meta name="description" content="Plateforme bourse et actualités financières" />
 </svelte:head>
 

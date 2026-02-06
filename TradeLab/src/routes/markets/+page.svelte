@@ -170,7 +170,7 @@
 </script>
 
 <svelte:head>
-	<title>Marchés | TradeLab</title>
+	<title>TradeLab - Marchés</title>
 	<meta name="description" content="Explorez les marchés et tradez vos actions préférées" />
 </svelte:head>
 
@@ -182,7 +182,6 @@
 	<div class="markets-header">
 		<div class="header-content">
 			<h1>Marchés Financiers</h1>
-			<p>Découvrez et tradez les meilleures actions en temps réel</p>
 		</div>
 	</div>
 
@@ -199,15 +198,15 @@
 				class="tab-btn {activeTab === 'popular' ? 'active' : ''}"
 				onclick={() => activeTab = 'popular'}
 			>
-				<span class="tab-icon">⭐</span>
+				<span class="tab-icon"></span>
 				Actions Populaires <span class="tab-count">({popularSymbols.length})</span>
 			</button>
 			<button 
 				class="tab-btn {activeTab === 'watchlist' ? 'active' : ''}"
 				onclick={() => activeTab = 'watchlist'}
 			>
-				<span class="tab-icon">📌</span>
-				Ma Watchlist <span class="tab-count">({$watchlist.length})</span>
+				<span class="tab-icon"></span>
+				Watchlist <span class="tab-count">({$watchlist.length})</span>
 			</button>
 			<button 
 				class="tab-btn {activeTab === 'recent' ? 'active' : ''}"

@@ -194,6 +194,11 @@
     transition: all 0.3s ease;
     position: relative;
     cursor: pointer;
+    width: 100%;
+    text-align: left;
+    display: block;
+    font-family: inherit;
+    font-size: inherit;
 }
 
 .position-card:hover {
