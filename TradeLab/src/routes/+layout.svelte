@@ -8,7 +8,9 @@
 
 	let { children } = $props();
 	let userEmail = $state<string | null>(null);
-	let showHeader = $derived(!$page.url.pathname.startsWith('/auth'));
+	let showHeader = $derived(
+		!$page.url.pathname.startsWith('/auth') && $page.url.pathname !== '/login'
+	);
 	let showProfileMenu = $state(false);
 	let currentTheme = $state<'default' | 'light' | 'black'>('default');
 	let showAddFundsModal = $state(false);

@@ -1,11 +1,18 @@
 <script lang="ts">
 	import TradeForm from './TradeForm.svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import { Chart, registerables } from 'chart.js';
+	import {
+		createChart,
+		CandlestickSeries,
+		LineSeries,
+		type IChartApi,
+		type ISeriesApi,
+		type UTCTimestamp,
+		type LineData,
+		type CandlestickData
+	} from 'lightweight-charts';
 	import { watchlist, addToWatchlist, removeFromWatchlist } from '$lib/stores/market';
 	import './StockDetail.css';
-
-	Chart.register(...registerables);
 
 	let {
 		symbol = '',
@@ -30,10 +37,18 @@
 	let error = $state('');
 	let tradeMode = $state<'buy' | 'sell'>('buy');
 	let selectedPeriod = $state('1D');
+	let chartType = $state<'candles' | 'line'>('candles');
 	let chartLoading = $state(false);
 	let chartError = $state('');
-	let chartContainer: HTMLCanvasElement | undefined = $state();
-	let chart: Chart | null = $state(null);
+	let chartContainer: HTMLDivElement | undefined = $state();
+	let chart: IChartApi | null = $state(null);
+	let candleSeries: ISeriesApi<'Candlestick'> | null = $state(null);
+	let smaSeries: ISeriesApi<'Line'> | null = $state(null);
+	let lineSeries: ISeriesApi<'Line'> | null = $state(null);
+	let resizeObserver: ResizeObserver | null = null;
+	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let refreshActive = false;
+	let refreshInFlight = false;
 	let isInWatchlist = $derived($watchlist.includes(symbol.toUpperCase()));
 
 	function isMarketOpen(): { stock: boolean; crypto: boolean } {
@@ -62,15 +77,19 @@
 	});
 
 	onDestroy(() => {
-		if (chart) {
-			chart.destroy();
-			chart = null;
-		}
+		stopAutoRefresh();
+		resizeObserver?.disconnect();
+		resizeObserver = null;
+		chart?.remove();
+		chart = null;
+		candleSeries = null;
+		smaSeries = null;
 	});
 
 	$effect(() => {
 		if (symbol) {
 			loadStockData();
+			startAutoRefresh();
 		}
 	});
 
@@ -80,8 +99,47 @@
 		}
 	});
 
-	async function loadStockData() {
-		loading = true;
+	$effect(() => {
+		if (chartType === 'candles') {
+			candleSeries?.applyOptions({ visible: true });
+			smaSeries?.applyOptions({ visible: true });
+			lineSeries?.applyOptions({ visible: false });
+		} else {
+			candleSeries?.applyOptions({ visible: false });
+			smaSeries?.applyOptions({ visible: false });
+			lineSeries?.applyOptions({ visible: true });
+		}
+	});
+
+	function startAutoRefresh() {
+		stopAutoRefresh();
+		refreshActive = true;
+		const run = async () => {
+			if (!refreshActive || !symbol || refreshInFlight) {
+				return;
+			}
+			refreshInFlight = true;
+			await loadStockData(true);
+			refreshInFlight = false;
+			if (refreshActive) {
+				refreshTimer = setTimeout(run, 5000);
+			}
+		};
+		refreshTimer = setTimeout(run, 0);
+	}
+
+	function stopAutoRefresh() {
+		refreshActive = false;
+		if (refreshTimer) {
+			clearTimeout(refreshTimer);
+			refreshTimer = null;
+		}
+	}
+
+	async function loadStockData(silent = false) {
+		if (!silent) {
+			loading = true;
+		}
 		error = '';
 		try {
 			const response = await fetch(`/api/stock/${symbol}`, {
@@ -115,22 +173,90 @@
 			console.error('Erreur lors du chargement des données:', err);
 			error = err instanceof Error ? err.message : 'Erreur inconnue';
 		} finally {
-			loading = false;
+			if (!silent) {
+				loading = false;
+			}
 		}
 	}
 
-	function calculateSMA(closes: number[], period: number = 20) {
-		const sma = [];
+	function buildSMA(closes: number[], timestamps: Array<string | number>, period: number = 20): LineData[] {
+		const sma: LineData[] = [];
 		for (let i = period - 1; i < closes.length; i++) {
 			const slice = closes.slice(i - period + 1, i + 1);
 			const sum = slice.reduce((acc, val) => acc + val, 0);
-			sma.push(sum / period);
+			sma.push({ time: normalizeTimestamp(timestamps[i]), value: sum / period });
 		}
 		return sma;
 	}
 
+	function normalizeTimestamp(value: string | number): UTCTimestamp {
+		const raw = Number(value);
+		const offsetSeconds = new Date(raw * 1000).getTimezoneOffset() * 60;
+		return (raw - offsetSeconds) as UTCTimestamp;
+	}
+
+	function initChart() {
+		if (!chartContainer || chart) return;
+
+		const width = Math.floor(chartContainer.clientWidth);
+		const height = Math.floor(chartContainer.clientHeight);
+
+		chart = createChart(chartContainer, {
+			width: width > 0 ? width : undefined,
+			height: height > 0 ? height : undefined,
+			layout: {
+				background: { color: 'transparent' },
+				textColor: '#9ca3af'
+			},
+			grid: {
+				vertLines: { color: '#2d3748' },
+				horzLines: { color: '#2d3748' }
+			},
+			rightPriceScale: { borderColor: '#2d3748' },
+			timeScale: { borderColor: '#2d3748', timeVisible: true }
+		});
+
+		candleSeries = chart.addSeries(CandlestickSeries, {
+			upColor: '#10b981',
+			downColor: '#ef4444',
+			borderUpColor: '#10b981',
+			borderDownColor: '#ef4444',
+			wickUpColor: '#10b981',
+			wickDownColor: '#ef4444'
+		});
+
+		smaSeries = chart.addSeries(LineSeries, {
+			color: '#3b82f6',
+			lineWidth: 2
+		});
+
+		lineSeries = chart.addSeries(LineSeries, {
+			color: '#10b981',
+			lineWidth: 2
+		});
+
+		if (chartType === 'line') {
+			candleSeries.applyOptions({ visible: false });
+			smaSeries.applyOptions({ visible: false });
+		} else {
+			lineSeries.applyOptions({ visible: false });
+		}
+
+		resizeObserver = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				const width = Math.floor(entry.contentRect.width);
+				const height = Math.floor(entry.contentRect.height);
+				if (width > 0 && height > 0) {
+					chart?.resize(width, height);
+				}
+			}
+		});
+		resizeObserver.observe(chartContainer);
+	}
+
 	async function loadChartData(period: string) {
 		if (!chartContainer) return;
+		initChart();
 
 		chartLoading = true;
 		chartError = '';
@@ -149,78 +275,40 @@
 				return;
 			}
 
-			const labels = data.timestamps.map((ts: string) => 
-				new Date(parseInt(ts) * 1000).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })
+			const length = Math.min(
+				data.timestamps.length,
+				data.open.length,
+				data.high.length,
+				data.low.length,
+				data.close.length
 			);
 
-			const sma20 = calculateSMA(data.close, 20);
-			const sma20Data = Array(data.close.length - sma20.length).fill(null).concat(sma20);
-
-			if (chart) {
-				chart.destroy();
+			if (length === 0) {
+				chartError = 'Aucune donnee disponible pour le graphique';
+				candleSeries?.setData([]);
+				smaSeries?.setData([]);
+				return;
 			}
 
-			chart = new Chart(chartContainer, {
-				type: 'line',
-				data: {
-					labels: labels,
-					datasets: [
-						{
-							label: 'Prix de clôture',
-							data: data.close,
-							borderColor: '#10b981',
-							backgroundColor: 'rgba(16, 185, 129, 0.1)',
-							borderWidth: 2,
-							pointRadius: 0,
-							fill: true,
-							tension: 0.1
-						},
-						{
-							label: 'SMA 20',
-							data: sma20Data,
-							borderColor: '#3b82f6',
-							backgroundColor: 'transparent',
-							borderWidth: 2,
-							pointRadius: 0,
-							borderDash: [5, 5],
-							tension: 0.1
-						}
-					]
-				},
-				options: {
-					responsive: true,
-					maintainAspectRatio: false,
-					plugins: {
-						legend: {
-							display: true,
-							position: 'top',
-							labels: { color: '#9ca3af' }
-						},
-						tooltip: {
-							mode: 'index',
-							intersect: false,
-							callbacks: {
-								label: (context) => {
-									const label = context.dataset.label || '';
-									const value = context.parsed.y;
-									return `${label}: $${value!.toFixed(2)}`;
-								}
-							}
-						}
-					},
-					scales: {
-						x: {
-							grid: { color: '#2d3748' },
-							ticks: { color: '#9ca3af' }
-						},
-						y: {
-							grid: { color: '#2d3748' },
-							ticks: { color: '#9ca3af' },
-							position: 'right'
-						}
-					}
-				}
-			});
+			const candles: CandlestickData[] = [];
+			const lineData: LineData[] = [];
+			for (let i = 0; i < length; i++) {
+				const time = normalizeTimestamp(data.timestamps[i]);
+				const close = Number(data.close[i]);
+				candles.push({
+					time,
+					open: Number(data.open[i]),
+					high: Number(data.high[i]),
+					low: Number(data.low[i]),
+					close
+				});
+				lineData.push({ time, value: close });
+			}
+
+			candleSeries?.setData(candles);
+			smaSeries?.setData(buildSMA(data.close.slice(0, length), data.timestamps.slice(0, length), 20));
+			lineSeries?.setData(lineData);
+			chart?.timeScale().fitContent();
 		} catch (err) {
 			console.error('Erreur lors du chargement du graphique:', err);
 			chartError = 'Erreur lors du chargement du graphique';
@@ -328,7 +416,7 @@
 
 					<div class="chart-controls">
 						<div class="period-selector">
-							{#each ['1D', '1W', '1M', '3M', '1Y', '5Y'] as period}
+							{#each ['1m', '5m', '1D', '1W', '1M', '3M', '1Y', '5Y'] as period}
 								<button
 									class="period-btn {selectedPeriod === period ? 'active' : ''}"
 									onclick={() => selectedPeriod = period}
@@ -338,9 +426,20 @@
 								</button>
 							{/each}
 						</div>
+						<div class="period-selector">
+							{#each ['candles', 'line'] as mode}
+								<button
+									class="period-btn {chartType === mode ? 'active' : ''}"
+									onclick={() => chartType = mode as 'candles' | 'line'}
+									disabled={chartLoading}
+								>
+									{mode === 'candles' ? 'Candlesticks' : 'Lineaire'}
+								</button>
+							{/each}
+						</div>
 					</div>
 
-					<div class="chart-wrapper" style="position: relative; height: 300px;">
+					<div class="chart-container" style="position: relative; height: 300px;">
 						{#if chartLoading}
 							<div class="chart-loading">
 								<div class="spinner"></div>
@@ -351,7 +450,7 @@
 								<p>{chartError}</p>
 							</div>
 						{:else}
-							<canvas bind:this={chartContainer}></canvas>
+							<div class="chart-canvas" bind:this={chartContainer}></div>
 						{/if}
 					</div>
 

@@ -40,16 +40,38 @@ export const GET: RequestHandler = async ({ params }) => {
 					
 					if (yahooResponse.ok) {
 						const yahooData = await yahooResponse.json();
+						let change = yahooData.change;
+						let changePercent = yahooData.changePercent;
+
+						if (
+							(change === undefined || change === null || (change === 0 && yahooData.price !== yahooData.previousClose)) &&
+							yahooData.price &&
+							yahooData.previousClose
+						) {
+							change = yahooData.price - yahooData.previousClose;
+						}
+
+						if (
+							(changePercent === undefined || changePercent === null || (changePercent === 0 && yahooData.price !== yahooData.previousClose)) &&
+							yahooData.price &&
+							yahooData.previousClose > 0
+						) {
+							changePercent = (change / yahooData.previousClose) * 100;
+						}
+
 						quoteData = {
 							c: yahooData.price,
-							d: yahooData.change,
-							dp: yahooData.changePercent,
+							d: change || 0,
+							dp: changePercent || 0,
 							o: yahooData.open,
 							h: yahooData.high,
 							l: yahooData.low,
 							pc: yahooData.previousClose
 						};
 						profileData.marketCapitalization = yahooData.marketCap / 1000000;
+						if (yahooData.logoUrl) {
+							profileData.logo = yahooData.logoUrl;
+						}
 					}
 				} catch (e) {
 					console.log(`Yahoo Finance unavailable, returning Finnhub data with 0 values`);
@@ -75,16 +97,38 @@ export const GET: RequestHandler = async ({ params }) => {
 				
 				if (yahooResponse.ok) {
 					const yahooData = await yahooResponse.json();
+					let change = yahooData.change;
+					let changePercent = yahooData.changePercent;
+
+					if (
+						(change === undefined || change === null || (change === 0 && yahooData.price !== yahooData.previousClose)) &&
+						yahooData.price &&
+						yahooData.previousClose
+					) {
+						change = yahooData.price - yahooData.previousClose;
+					}
+
+					if (
+						(changePercent === undefined || changePercent === null || (changePercent === 0 && yahooData.price !== yahooData.previousClose)) &&
+						yahooData.price &&
+						yahooData.previousClose > 0
+					) {
+						changePercent = (change / yahooData.previousClose) * 100;
+					}
+
 					quoteData = {
 						c: yahooData.price,
-						d: yahooData.change,
-						dp: yahooData.changePercent,
+						d: change || 0,
+						dp: changePercent || 0,
 						o: yahooData.open,
 						h: yahooData.high,
 						l: yahooData.low,
 						pc: yahooData.previousClose
 					};
 					profileData.marketCapitalization = yahooData.marketCap / 1000000;
+					if (yahooData.logoUrl) {
+						profileData.logo = yahooData.logoUrl;
+					}
 				}
 			} catch (e) {
 				console.log(`Yahoo Finance also failed for ${symbol}, returning empty data`);

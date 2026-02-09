@@ -31,7 +31,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
     const { session } = await event.locals.safeGetSession();
     if (!session) {
-        throw redirect(303, '/auth');
+        throw redirect(303, '/login');
     }
 
     return resolve(event);

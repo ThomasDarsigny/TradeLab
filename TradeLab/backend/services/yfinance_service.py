@@ -172,6 +172,11 @@ def get_quote(symbol: str):
         
         ticker = yf.Ticker(symbol)
         info = ticker.fast_info
+        logo_url = None
+        try:
+            logo_url = ticker.info.get('logo_url')
+        except Exception:
+            logo_url = None
         
         return {
             'symbol': symbol.upper(),
@@ -182,7 +187,8 @@ def get_quote(symbol: str):
             'high': info.get('dayHigh', 0),
             'low': info.get('dayLow', 0),
             'previousClose': info.get('previousClose', 0),
-            'marketCap': info.get('marketCap', 0)
+            'marketCap': info.get('marketCap', 0),
+            'logoUrl': logo_url
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

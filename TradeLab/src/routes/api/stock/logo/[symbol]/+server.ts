@@ -1,9 +1,14 @@
 import type { RequestHandler } from '@sveltejs/kit';
 import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
 
-const withCacheHeaders = (res: Response) => {
-	res.headers.set('Cache-Control', 'public, max-age=86400');
-	return res;
+const withCacheHeaders = (location: URL | string) => {
+	return new Response(null, {
+		status: 302,
+		headers: {
+			Location: location.toString(),
+			'Cache-Control': 'public, max-age=86400'
+		}
+	});
 };
 
 const getDomainFromUrl = (url: string | undefined) => {
@@ -11,7 +16,7 @@ const getDomainFromUrl = (url: string | undefined) => {
 	return url.replace('https://', '').replace('http://', '').split('/')[0];
 };
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, request }) => {
 	const symbol = (params.symbol ?? '').toUpperCase();
 
 	if (PUBLIC_FINNHUB_API_KEY) {
@@ -22,13 +27,11 @@ export const GET: RequestHandler = async ({ params }) => {
 			if (profileResponse.ok) {
 				const profile = await profileResponse.json();
 				if (profile?.logo) {
-					return withCacheHeaders(Response.redirect(profile.logo, 302));
+					return withCacheHeaders(profile.logo as string);
 				}
 				const domain = getDomainFromUrl(profile?.weburl);
 				if (domain) {
-					return withCacheHeaders(
-						Response.redirect(`https://logo.clearbit.com/${domain}`, 302)
-					);
+					return withCacheHeaders(`https://logo.clearbit.com/${domain}`);
 				}
 			}
 		} catch {
@@ -53,13 +56,12 @@ export const GET: RequestHandler = async ({ params }) => {
 				| undefined;
 			const domain = getDomainFromUrl(website);
 			if (domain) {
-				return withCacheHeaders(
-					Response.redirect(`https://logo.clearbit.com/${domain}`, 302)
-				);
+				return withCacheHeaders(`https://logo.clearbit.com/${domain}`);
 			}
 		}
 	} catch {
 	}
 
-	return new Response(null, { status: 404 });
+	const fallbackUrl = new URL('/logo.png', request.url);
+	return withCacheHeaders(fallbackUrl);
 };
