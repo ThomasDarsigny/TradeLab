@@ -5,6 +5,7 @@
 		transactions?: Transaction[];
 	}>();
 
+
 	const sortedTransactions = $derived.by(() =>
 		[...transactions].sort(
 			(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -112,6 +113,11 @@
 		color: var(--text-secondary);
 	}
 
+	.history-row span {
+		text-align: center;
+	}
+
+
 	.history-head {
 		background: transparent;
 		border: none;
@@ -121,6 +127,10 @@
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		font-size: 0.8rem;
+	}
+
+	.history-head span {
+		text-align: center;
 	}
 
 	.pill {
@@ -136,7 +146,7 @@
 	}
 
 	.amount {
-		text-align: right;
+		text-align: center;
 		font-weight: 700;
 		color: var(--text-primary);
 	}
@@ -202,7 +212,7 @@
 		}
 
 		.amount {
-			text-align: left;
+			text-align: center;
 		}
 	}
 </style>

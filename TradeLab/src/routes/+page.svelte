@@ -10,6 +10,13 @@
 	let loading = $state(true);
 	let error = $state('');
 
+	const handleLogoError = (event: Event) => {
+		const target = event.currentTarget as HTMLImageElement | null;
+		if (target) {
+			target.style.display = 'none';
+		}
+	};
+
 	const currency = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
 	const totalInvested = $derived(
@@ -109,6 +116,40 @@
 			{/if}
 		</section>
 
+		<section class="positions-section">
+			<div class="section-header">
+				<h3>Titres possedés</h3>
+				<p>Cliquez sur un titre pour voir les détails.</p>
+			</div>
+			{#if positions.length > 0}
+				<div class="positions-grid">
+					{#each positions as pos (pos.symbol)}
+						<a class="position-card" href={`/stock/${pos.symbol}`}>
+							<div class="position-main">
+								<img
+									class="position-logo"
+									src={`/api/stock/logo/${pos.symbol}`}
+									alt={`Logo ${pos.symbol}`}
+									loading="lazy"
+									decoding="async"
+									onerror={handleLogoError}
+								/>
+								<div>
+									<strong>{pos.symbol}</strong>
+								</div>
+							</div>
+							<div class="position-meta">
+								<span>Quantité: {pos.quantity}</span>
+								<span>Prix: ${currency.format(pos.current_price)}</span>
+							</div>
+						</a>
+					{/each}
+				</div>
+			{:else}
+				<div class="empty-card">Aucun titre détenu.</div>
+			{/if}
+		</section>
+
 		<section class="history-section">
 			<TransactionsHistory transactions={transactions} />
 		</section>
@@ -194,6 +235,83 @@
 
 	.charts-section {
 		margin-top: 2rem;
+	}
+
+	.positions-section {
+		margin-top: 2rem;
+	}
+
+	.section-header h3 {
+		margin: 0 0 0.35rem 0;
+		color: var(--text-primary);
+		font-size: 1.2rem;
+	}
+
+	.section-header p {
+		margin: 0 0 1.25rem 0;
+		color: var(--text-secondary);
+		font-size: 0.95rem;
+	}
+
+	.positions-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 1rem;
+	}
+
+	.position-card {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 1rem 1.2rem;
+		border-radius: 16px;
+		border: 1px solid var(--border-primary);
+		background: var(--bg-secondary);
+		color: inherit;
+		text-decoration: none;
+		box-shadow: var(--shadow-lg);
+		transition: transform 0.2s ease, border-color 0.2s ease;
+	}
+
+	.position-card:hover {
+		transform: translateY(-2px);
+		border-color: rgba(59, 130, 246, 0.5);
+	}
+
+	.position-main {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.position-logo {
+		width: 40px;
+		height: 40px;
+		border-radius: 10px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-primary);
+		object-fit: contain;
+	}
+
+	.position-card strong {
+		display: block;
+		font-size: 1.1rem;
+		color: var(--text-primary);
+	}
+
+	.position-card span {
+		display: block;
+		color: var(--text-secondary);
+		font-size: 0.9rem;
+	}
+
+	.position-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-size: 0.85rem;
+		color: var(--text-muted);
 	}
 
 	.history-section {

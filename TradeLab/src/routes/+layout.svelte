@@ -26,10 +26,25 @@
 			userEmail = user?.email || null;
 		};
 
+		const refreshAccount = async () => {
+			try {
+				const response = await fetch('/api/account', { credentials: 'include' });
+				if (!response.ok) return;
+				const data = await response.json();
+				if (data?.account) {
+					setAccount(data.account);
+				}
+			} catch (error) {
+				console.error('Erreur chargement compte:', error);
+			}
+		};
+
 		refreshUser();
+		refreshAccount();
 
 		supabase.auth.onAuthStateChange(async (event: string) => {
 			await refreshUser();
+			await refreshAccount();
 			if (event === 'SIGNED_OUT') {
 				goto('/auth');
 			}
@@ -37,6 +52,7 @@
 
 		const handleFocus = () => {
 			refreshUser();
+			refreshAccount();
 		};
 
 		window.addEventListener('focus', handleFocus);
@@ -133,6 +149,7 @@
 			addFundsDescription = '';
 			if (data?.account) {
 				setAccount(data.account);
+				window.dispatchEvent(new CustomEvent('account-updated'));
 			}
 		} catch (error) {
 			console.error('Erreur depot:', error);
@@ -231,7 +248,8 @@
 					
 					<button class="profile-menu-item" class:active={currentTheme === 'default'} onclick={() => setTheme('default')}>
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+							<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
+							<path d="M6.5 6.5l.6 1.2 1.4.2-1 .9.2 1.4-1.2-.6-1.2.6.2-1.4-1-.9 1.4-.2.6-1.2z"></path>
 						</svg>
 						<span>Défaut (Bleu foncé)</span>
 						{#if currentTheme === 'default'}
@@ -263,7 +281,7 @@
 					
 					<button class="profile-menu-item" class:active={currentTheme === 'black'} onclick={() => setTheme('black')}>
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+							<rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="currentColor" stroke="none"></rect>
 						</svg>
 						<span>Mode noir</span>
 						{#if currentTheme === 'black'}

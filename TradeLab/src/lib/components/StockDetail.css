@@ -182,8 +182,8 @@
 }
 
 .btn-close-detail {
-	background: var(--bg-tertiary);
-	border: 1px solid var(--border-secondary);
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-primary);
 	color: var(--text-primary);
 	cursor: pointer;
 	padding: 0.75rem;
@@ -728,18 +728,19 @@
 }
 
 .btn-close-detail {
-	background: transparent;
-	border: none;
-	color: var(--text-muted);
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-primary);
+	color: var(--text-primary);
 	cursor: pointer;
-	padding: 0.5rem;
-	border-radius: 8px;
+	padding: 0.75rem;
+	border-radius: 12px;
 	transition: all 0.2s ease;
 }
 
 .btn-close-detail:hover {
-	background: var(--bg-tertiary);
-	color: var(--text-primary);
+	background: var(--accent-red);
+	color: white;
+	border-color: var(--accent-red);
 }
 
 .loading-state {

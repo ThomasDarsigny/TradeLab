@@ -360,7 +360,7 @@
 			inset 0 1px 0 rgba(255, 255, 255, 0.1);
 		overflow: visible;
 		transition: all 0.3s ease;
-		z-index: 100;
+		z-index: 20;
 	}
 
 	.search-section::before {
