@@ -1,8 +1,8 @@
-# 📈 TradeLab
+#  TradeLab
 
 Plateforme de trading en ligne avec données de marché en temps réel.
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 TradeLab/
@@ -21,7 +21,7 @@ TradeLab/
 └── static/              # Fichiers statiques
 ```
 
-## 🚀 Démarrage rapide
+##  Démarrage rapide
 
 ### Backend (API Yahoo Finance)
 
@@ -52,7 +52,7 @@ npm run dev
 npm run build
 ```
 
-## 📡 API Endpoints
+##  API Endpoints
 
 ### Yahoo Finance Service
 
@@ -63,7 +63,7 @@ npm run build
 - `GET /proxy/stats` - Statistiques des proxies
 - `POST /proxy/refresh` - Rafraîchir les proxies
 
-## ⚙️ Configuration
+##  Configuration
 
 ### Proxies privés
 
@@ -77,7 +77,7 @@ PROXY_LIST = [
 ]
 ```
 
-## 🔧 Technologies
+##  Technologies
 
 **Backend:**
 - FastAPI - Framework API moderne
@@ -91,24 +91,20 @@ PROXY_LIST = [
 - Supabase - Base de données et auth
 - Vite - Build tool
 
-## 📊 Fonctionnalités
+##  Fonctionnalités
 
-- ✅ Recherche de symboles boursiers
-- ✅ Citations en temps réel
-- ✅ Données historiques
-- ✅ Gestion de portfolio
-- ✅ Trading (achat/vente)
-- ✅ Authentification utilisateur
-- ✅ Graphiques interactifs
-- ✅ Actualités financières
+-  Recherche de symboles boursiers
+-  Citations en temps réel
+-  Données historiques
+-  Gestion de portfolio
+-  Trading (achat/vente)
+-  Authentification utilisateur
+-  Graphiques interactifs
+-  Actualités financières
 
-## 🛡️ Sécurité
+## Sécurité
 
 - Rotation automatique de proxies
 - Rate limiting
 - Headers de navigateur réalistes
 - Protection anti-bot (Cloudscraper)
-
-## 📝 Licence
-
-Projet académique - CEGEP Session 8
