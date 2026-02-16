@@ -33,7 +33,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             account: normalizeAccount(updatedAccount),
         });
     } catch (error) {
-        console.error('Erreur dépôt:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };

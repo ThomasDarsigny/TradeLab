@@ -17,7 +17,6 @@
 
       if (ws) {
         ws.onopen = () => {
-          console.log('Connecté au serveur');
           connected = true;
 
           ws?.send(JSON.stringify({ symbols }));
@@ -42,17 +41,15 @@
         };
 
         ws.onerror = (error) => {
-          console.error('Erreur WebSocket:', error);
           connected = false;
         };
 
         ws.onclose = () => {
-          console.log('Déconnecté');
           connected = false;
         };
       }
     } catch (error) {
-      console.error('Erreur connexion:', error);
+      // noop
     }
   }
 

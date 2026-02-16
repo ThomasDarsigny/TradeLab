@@ -45,7 +45,6 @@ export const GET: RequestHandler = async ({ url }) => {
 						.slice(0, Math.min(limit, 200));
 				}
 			} catch (finnhubError) {
-				console.warn('Finnhub search error:', finnhubError);
 			}
 
 			if (symbols.length < 5) {
@@ -75,7 +74,6 @@ export const GET: RequestHandler = async ({ url }) => {
 						});
 					}
 				} catch (yahooError) {
-					console.warn('Service Yahoo Finance indisponible:', yahooError);
 				}
 			}
 
@@ -104,7 +102,6 @@ export const GET: RequestHandler = async ({ url }) => {
 						exchange: exchange.name
 					}));
 			} catch (error) {
-				console.error(`Erreur pour ${exchange.name}:`, error);
 				return [];
 			}
 		});
@@ -116,7 +113,6 @@ export const GET: RequestHandler = async ({ url }) => {
 
 		return json({ symbols });
 	} catch (error) {
-		console.error('Erreur lors de la récupération des symboles:', error);
 		return json(
 			{
 				error:

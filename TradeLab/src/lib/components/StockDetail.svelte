@@ -170,7 +170,6 @@
 				marketCap: data.marketCap
 			};
 		} catch (err) {
-			console.error('Erreur lors du chargement des données:', err);
 			error = err instanceof Error ? err.message : 'Erreur inconnue';
 		} finally {
 			if (!silent) {
@@ -310,7 +309,6 @@
 			lineSeries?.setData(lineData);
 			chart?.timeScale().fitContent();
 		} catch (err) {
-			console.error('Erreur lors du chargement du graphique:', err);
 			chartError = 'Erreur lors du chargement du graphique';
 		} finally {
 			chartLoading = false;

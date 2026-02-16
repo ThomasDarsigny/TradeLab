@@ -41,19 +41,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				`${YFINANCE_API_URL}/history/${encodeURIComponent(symbol)}?period=${params.period}&interval=${params.interval}`
 			);
 
-			console.log(
-				`yFinance candles response status: ${response.status} for ${symbol} (${params.period}/${params.interval})`
-			);
 
 			if (!response.ok) {
 				const body = await response.text();
-				console.error(`yFinance candles error (${response.status}): ${body || 'Reponse vide'}`);
 				return null;
 			}
 
 			const data = await response.json();
 			if (!data.timestamps || data.timestamps.length === 0) {
-				console.log(`No yFinance candle data for ${symbol} (${params.period}/${params.interval})`);
 				return null;
 			}
 
@@ -79,7 +74,6 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 			return null;
 		} catch (error) {
-			console.error('Erreur API yFinance Candles:', error);
 			return null;
 		}
 	};
@@ -89,11 +83,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			`${FINNHUB_API_URL}/candles/${encodeURIComponent(symbol)}?resolution=${resolution}&count=${count}`
 		);
 
-		console.log(`Finnhub candles response status: ${response.status} for ${symbol}`);
 
 		if (!response.ok) {
 			const body = await response.text();
-			console.error(`Finnhub candles error (${response.status}): ${body || 'Reponse vide'}`);
 			const fallback = await yfinanceFallback();
 			if (fallback) {
 				return json(fallback);
@@ -112,7 +104,6 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		const data = await response.json();
 
 		if (!data.timestamps || data.timestamps.length === 0) {
-			console.log(`No Finnhub candle data for ${symbol}`);
 			const fallback = await yfinanceFallback();
 			if (fallback) {
 				return json(fallback);
@@ -137,7 +128,6 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			volume: data.volume || []
 		});
 	} catch (error) {
-		console.error('Erreur API Finnhub Candles:', error);
 		const fallback = await yfinanceFallback();
 		if (fallback) {
 			return json(fallback);

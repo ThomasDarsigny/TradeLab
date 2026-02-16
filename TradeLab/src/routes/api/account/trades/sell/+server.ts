@@ -38,7 +38,6 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             position: normalizePosition(result.position),
         });
     } catch (error) {
-        console.error('Erreur vente:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };

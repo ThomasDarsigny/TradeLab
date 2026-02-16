@@ -27,7 +27,6 @@ export const GET: RequestHandler = async ({ locals }) => {
             positions: normalizePositions(positions),
         });
     } catch (error) {
-        console.error('Erreur récupération positions:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };

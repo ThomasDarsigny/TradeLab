@@ -18,7 +18,6 @@
 				stats = data.stats;
 			}
 		} catch (error) {
-			console.error('Erreur:', error);
 		} finally {
 			loading = false;
 		}

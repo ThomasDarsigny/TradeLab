@@ -30,7 +30,6 @@
 				stocks = allStocks;
 			}
 		} catch (error) {
-			console.error('Erreur lors du chargement des symboles:', error);
 		} finally {
 			loading = false;
 		}
@@ -53,7 +52,6 @@
 					stocks = data.symbols || [];
 				}
 			} catch (error) {
-				console.error('Erreur lors de la recherche de symboles:', error);
 			}
 		}, 250);
 	});

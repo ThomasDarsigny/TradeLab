@@ -37,7 +37,6 @@
                     });
 
                     if (!response.ok) {
-                        console.error('Erreur création compte trading');
                     }
                 }
 

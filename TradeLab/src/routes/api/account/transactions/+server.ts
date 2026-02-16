@@ -27,7 +27,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
             transactions: normalizeTransactions(transactions),
         });
     } catch (error) {
-        console.error('Erreur récupération transactions:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };

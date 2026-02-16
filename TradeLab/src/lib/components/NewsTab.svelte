@@ -27,7 +27,6 @@
 				}));
 			}
 		} catch (error) {
-			console.error('Erreur:', error);
 			news = [
 				{
 					title: 'Les marchés montent de 2% cette semaine',

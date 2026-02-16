@@ -26,7 +26,6 @@ export const POST: RequestHandler = async ({ locals }) => {
             account: normalizeAccount(account),
         });
     } catch (error) {
-        console.error('Erreur création compte:', error);
         return json({ 
             error: error instanceof Error ? error.message : 'Erreur serveur' 
         }, { status: 500 });

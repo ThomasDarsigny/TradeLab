@@ -35,7 +35,6 @@
 					setAccount(data.account);
 				}
 			} catch (error) {
-				console.error('Erreur chargement compte:', error);
 			}
 		};
 
@@ -152,7 +151,6 @@
 				window.dispatchEvent(new CustomEvent('account-updated'));
 			}
 		} catch (error) {
-			console.error('Erreur depot:', error);
 			addFundsError = 'Erreur reseau. Veuillez reessayer.';
 		} finally {
 			addFundsLoading = false;

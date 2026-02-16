@@ -5,10 +5,8 @@ import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
 export const GET: RequestHandler = async ({ params }) => {
 	const { symbol } = params as unknown as { symbol: string };
 	const apiKey = PUBLIC_FINNHUB_API_KEY;
-	console.log('API Key disponible:', !!apiKey, 'Symbol:', symbol);
 
 	if (!apiKey) {
-		console.error('Clé API Finnhub non disponible');
 		return json(
 			{ error: 'Configuration API manquante' },
 			{ status: 500 }
@@ -32,7 +30,6 @@ export const GET: RequestHandler = async ({ params }) => {
 			quoteData = await quoteResponse.json();
 			
 			if (!quoteData.c || quoteData.c === 0) {
-				console.log(`Finnhub no data for ${symbol}, trying Yahoo Finance...`);
 				try {
 					const yahooResponse = await globalThis.fetch(
 						`http://127.0.0.1:8001/quote/${symbol}`
@@ -74,7 +71,6 @@ export const GET: RequestHandler = async ({ params }) => {
 						}
 					}
 				} catch (e) {
-					console.log(`Yahoo Finance unavailable, returning Finnhub data with 0 values`);
 				}
 			} else {
 				try {
@@ -85,11 +81,9 @@ export const GET: RequestHandler = async ({ params }) => {
 						profileData = await profileResponse.json();
 					}
 				} catch (e) {
-					console.log('Profile data unavailable, continuing with empty profile');
 				}
 			}
 		} else {
-			console.log(`Finnhub error for ${symbol}, trying Yahoo Finance...`);
 			try {
 				const yahooResponse = await globalThis.fetch(
 					`http://127.0.0.1:8001/quote/${symbol}`
@@ -131,7 +125,6 @@ export const GET: RequestHandler = async ({ params }) => {
 					}
 				}
 			} catch (e) {
-				console.log(`Yahoo Finance also failed for ${symbol}, returning empty data`);
 			}
 		}
 
@@ -159,7 +152,6 @@ export const GET: RequestHandler = async ({ params }) => {
 
 		return json(stockData);
 	} catch (error) {
-		console.error('Erreur API Stock:', error);
 		return json(
 			{ error: 'Impossible de récupérer les données de cette action' },
 			{ status: 500 }

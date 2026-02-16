@@ -24,7 +24,6 @@ export class QuotesWebSocket {
 				this.ws = new WebSocket(this.url);
 
 				this.ws.onopen = () => {
-					console.log('WebSocket connected');
 					this.reconnectAttempts = 0;
 					
 					const symbols = Array.from(this.subscribers.keys());
@@ -43,17 +42,14 @@ export class QuotesWebSocket {
 						const data = JSON.parse(event.data);
 						this.handleMessage(data);
 					} catch (error) {
-						console.error('Error parsing message:', error);
 					}
 				};
 
 				this.ws.onerror = (error) => {
-					console.error('WebSocket error:', error);
 					reject(error);
 				};
 
 				this.ws.onclose = () => {
-					console.log('WebSocket closed');
 					this.connectionListeners.forEach(listener => listener(false));
 					this.handleReconnect();
 				};
@@ -70,7 +66,6 @@ export class QuotesWebSocket {
 				callbacks.forEach((callback) => callback(data));
 			}
 		} else if (data.type === 'subscribed' || data.type === 'unsubscribed') {
-			console.log(` ${data.message}`);
 		}
 	}
 
@@ -79,10 +74,9 @@ export class QuotesWebSocket {
 			this.reconnectAttempts++;
 			const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
 			
-			console.log(` Reconnecting in ${delay / 1000}s... (attempt ${this.reconnectAttempts})`);
 			
 			this.reconnectTimer = setTimeout(() => {
-				this.connect().catch(console.error);
+				this.connect().catch(() => undefined);
 			}, delay);
 		}
 	}

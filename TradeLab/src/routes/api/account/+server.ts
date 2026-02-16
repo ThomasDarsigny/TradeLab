@@ -24,7 +24,6 @@ export const GET: RequestHandler = async ({ locals }) => {
             stats,
         });
     } catch (error) {
-        console.error('Erreur API account:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };
@@ -53,7 +52,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
             account: normalizeAccount(account),
         });
     } catch (error) {
-        console.error('Erreur création compte:', error);
         return json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 });
     }
 };

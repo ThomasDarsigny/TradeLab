@@ -64,7 +64,6 @@
 				}
 			}
 		} catch (error) {
-			console.error(`Error loading data for ${symbol}:`, error);
 		}
 	}
 
@@ -94,7 +93,6 @@
 				});
 			});
 		} catch (error) {
-			console.error('WebSocket connection failed:', error);
 		}
 	});
 	

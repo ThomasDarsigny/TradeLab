@@ -22,7 +22,6 @@
 				});
 			});
 		} catch (error) {
-			console.error('Erreur WebSocket:', error);
 		}
 	});
 
@@ -41,7 +40,6 @@
 				positions = data.positions;
 			}
 		} catch (error) {
-			console.error('Erreur:', error);
 		} finally {
 			loading = false;
 		}
