@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import { supabase } from '$lib/supabaseClient';
+	import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 	import { setAccount, clearAccount } from '$lib/stores/account';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
@@ -19,11 +20,106 @@
 	let addFundsError = $state<string | null>(null);
 	let addFundsLoading = $state(false);
 	let addFundsSuccess = $state<string | null>(null);
+	let tradingBotEnabled = $state(false);
+	let tradingBotLoading = $state(false);
+	let tradingBotError = $state<string | null>(null);
+	let currentUserId = $state<string | null>(null);
+	let botActions = $state<BotAction[]>([]);
+	let botPanelOpen = $state(true);
+	let botSubscription = $state<any>(null);
+
+	type BotAction = {
+		id: string;
+		action_type: string;
+		symbol?: string | null;
+		message: string;
+		details?: Record<string, any> | null;
+		created_at: string;
+	};
+
+	const formatBotTimestamp = (value: string) => {
+		try {
+			return new Intl.DateTimeFormat('fr-CA', {
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit'
+			}).format(new Date(value));
+		} catch (error) {
+			return '';
+		}
+	};
+
+	const loadTradingBotSetting = async () => {
+		tradingBotError = null;
+		tradingBotLoading = true;
+		try {
+			const response = await fetch('/api/settings/trading-bot', { credentials: 'include' });
+			if (!response.ok) {
+				return;
+			}
+			const data = await response.json();
+			tradingBotEnabled = Boolean(data?.enabled);
+		} catch (error) {
+			tradingBotError = 'Impossible de charger le statut du bot.';
+		} finally {
+			tradingBotLoading = false;
+		}
+	};
+
+	const loadBotActions = async (userId: string) => {
+		try {
+			const { data, error } = await supabase
+				.from('bot_actions')
+				.select('*')
+				.eq('user_id', userId)
+				.order('created_at', { ascending: false })
+				.limit(30);
+
+			if (!error) {
+				botActions = (data ?? []) as BotAction[];
+			}
+		} catch (error) {
+		}
+	};
+
+	const subscribeBotActions = (userId: string) => {
+		if (botSubscription) {
+			supabase.removeChannel(botSubscription);
+			botSubscription = null;
+		}
+
+		botSubscription = supabase
+			.channel(`bot-actions-${userId}`)
+			.on(
+				'postgres_changes',
+				{
+					event: 'INSERT',
+					schema: 'public',
+					table: 'bot_actions',
+					filter: `user_id=eq.${userId}`
+				},
+				(payload: RealtimePostgresInsertPayload<BotAction>) => {
+					const action = payload.new;
+					botActions = [action, ...botActions].slice(0, 50);
+				}
+			)
+			.subscribe();
+	};
 
 	onMount(() => {
 		const refreshUser = async () => {
 			const { data: { user } } = await supabase.auth.getUser();
 			userEmail = user?.email || null;
+			currentUserId = user?.id ?? null;
+			if (user) {
+				await loadTradingBotSetting();
+				await loadBotActions(user.id);
+				subscribeBotActions(user.id);
+			} else if (botSubscription) {
+				supabase.removeChannel(botSubscription);
+				botSubscription = null;
+				botActions = [];
+			}
 		};
 
 		const refreshAccount = async () => {
@@ -66,6 +162,10 @@
 		return () => {
 			window.removeEventListener('focus', handleFocus);
 			document.removeEventListener('visibilitychange', handleFocus);
+			if (botSubscription) {
+				supabase.removeChannel(botSubscription);
+				botSubscription = null;
+			}
 		};
 	});
 
@@ -76,7 +176,16 @@
 		addFundsSuccess = null;
 		addFundsAmount = '';
 		addFundsDescription = '';
+		tradingBotEnabled = false;
+		tradingBotLoading = false;
+		tradingBotError = null;
+		botActions = [];
+		if (botSubscription) {
+			supabase.removeChannel(botSubscription);
+			botSubscription = null;
+		}
 		userEmail = null;
+		currentUserId = null;
 		clearAccount();
 		await supabase.auth.signOut();
 		await goto('/auth');
@@ -163,6 +272,43 @@
 			showProfileMenu = false;
 		}
 	}
+
+	async function updateTradingBotSetting(enabled: boolean) {
+		tradingBotError = null;
+		const previous = tradingBotEnabled;
+		tradingBotEnabled = enabled;
+		tradingBotLoading = true;
+		try {
+			const response = await fetch('/api/settings/trading-bot', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include',
+				body: JSON.stringify({ enabled })
+			});
+
+			if (!response.ok) {
+				const data = await response.json().catch(() => null);
+				throw new Error(data?.error || 'Erreur lors de la mise a jour.');
+			}
+
+			if (enabled && currentUserId) {
+				await loadBotActions(currentUserId);
+			}
+		} catch (error) {
+			tradingBotEnabled = previous;
+			tradingBotError = error instanceof Error ? error.message : 'Erreur lors de la mise a jour.';
+		} finally {
+			tradingBotLoading = false;
+		}
+	}
+
+	function handleTradingBotToggle(event: Event) {
+		const target = event.target as HTMLInputElement | null;
+		if (!target) return;
+		updateTradingBotSetting(target.checked);
+	}
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -241,64 +387,84 @@
 									<span>Ajouter des fonds</span>
 								</button>
 								
-					<div class="profile-menu-divider"></div>
-					<div class="theme-section-title">Thèmes</div>
-					
-					<button class="profile-menu-item" class:active={currentTheme === 'default'} onclick={() => setTheme('default')}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
-							<path d="M6.5 6.5l.6 1.2 1.4.2-1 .9.2 1.4-1.2-.6-1.2.6.2-1.4-1-.9 1.4-.2.6-1.2z"></path>
-						</svg>
-						<span>Défaut (Bleu foncé)</span>
-						{#if currentTheme === 'default'}
-							<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-								<polyline points="20 6 9 17 4 12"></polyline>
-							</svg>
-						{/if}
-					</button>
-					
-					<button class="profile-menu-item" class:active={currentTheme === 'light'} onclick={() => setTheme('light')}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<circle cx="12" cy="12" r="5"></circle>
-							<line x1="12" y1="1" x2="12" y2="3"></line>
-							<line x1="12" y1="21" x2="12" y2="23"></line>
-							<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-							<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-							<line x1="1" y1="12" x2="3" y2="12"></line>
-							<line x1="21" y1="12" x2="23" y2="12"></line>
-							<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-							<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-						</svg>
-						<span>Mode clair</span>
-						{#if currentTheme === 'light'}
-							<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-								<polyline points="20 6 9 17 4 12"></polyline>
-							</svg>
-						{/if}
-					</button>
-					
-					<button class="profile-menu-item" class:active={currentTheme === 'black'} onclick={() => setTheme('black')}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="currentColor" stroke="none"></rect>
-						</svg>
-						<span>Mode noir</span>
-						{#if currentTheme === 'black'}
-							<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-								<polyline points="20 6 9 17 4 12"></polyline>
-							</svg>
-						{/if}
-					</button>
-					
-					<div class="profile-menu-divider"></div>
-					
-					<button class="profile-menu-item danger" onclick={handleLogout}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-							<polyline points="16 17 21 12 16 7"></polyline>
-							<line x1="21" y1="12" x2="9" y2="12"></line>
-						</svg>
-						<span>Déconnexion</span>
-					</button>
+								<div class="profile-menu-divider"></div>
+								<div class="theme-section-title">Trading bot</div>
+								<div class="profile-menu-item bot-settings">
+									<div class="bot-settings-info">
+										<span>Activer le bot de trading</span>
+										<small class="bot-settings-hint">Strategie ADX, RSI, EMA et ATR</small>
+									</div>
+									<label class="switch">
+										<input
+											type="checkbox"
+											checked={tradingBotEnabled}
+											onchange={handleTradingBotToggle}
+											disabled={tradingBotLoading}
+										/>
+										<span class="switch-slider"></span>
+									</label>
+								</div>
+								{#if tradingBotError}
+									<div class="bot-settings-error">{tradingBotError}</div>
+								{/if}
+								
+								<div class="profile-menu-divider"></div>
+								<div class="theme-section-title">Thèmes</div>
+								<button class="profile-menu-item" class:active={currentTheme === 'default'} onclick={() => setTheme('default')}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
+										<path d="M6.5 6.5l.6 1.2 1.4.2-1 .9.2 1.4-1.2-.6-1.2.6.2-1.4-1-.9 1.4-.2.6-1.2z"></path>
+									</svg>
+									<span>Défaut (Bleu foncé)</span>
+									{#if currentTheme === 'default'}
+										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+									{/if}
+								</button>
+								
+								<button class="profile-menu-item" class:active={currentTheme === 'light'} onclick={() => setTheme('light')}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="5"></circle>
+										<line x1="12" y1="1" x2="12" y2="3"></line>
+										<line x1="12" y1="21" x2="12" y2="23"></line>
+										<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+										<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+										<line x1="1" y1="12" x2="3" y2="12"></line>
+										<line x1="21" y1="12" x2="23" y2="12"></line>
+										<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+										<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+									</svg>
+									<span>Mode clair</span>
+									{#if currentTheme === 'light'}
+										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+									{/if}
+								</button>
+								
+								<button class="profile-menu-item" class:active={currentTheme === 'black'} onclick={() => setTheme('black')}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="currentColor" stroke="none"></rect>
+									</svg>
+									<span>Mode noir</span>
+									{#if currentTheme === 'black'}
+										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+									{/if}
+								</button>
+								
+								<div class="profile-menu-divider"></div>
+								
+								<button class="profile-menu-item danger" onclick={handleLogout}>
+									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+										<polyline points="16 17 21 12 16 7"></polyline>
+										<line x1="21" y1="12" x2="9" y2="12"></line>
+									</svg>
+									<span>Déconnexion</span>
+								</button>
 							</div>
 						{/if}
 					</div>
@@ -310,6 +476,46 @@
 	<main class:full-page={!showHeader}>
 		{@render children()}
 	</main>
+
+	{#if tradingBotEnabled}
+		<aside class="bot-panel" aria-live="polite">
+			<div class="bot-panel-header">
+				<div>
+					<strong>Journal du bot</strong>
+					<span>Suivi en temps reel</span>
+				</div>
+				<button
+					class="bot-panel-toggle"
+					type="button"
+					onclick={() => (botPanelOpen = !botPanelOpen)}
+					aria-expanded={botPanelOpen}
+				>
+					{botPanelOpen ? 'Replier' : 'Ouvrir'}
+				</button>
+			</div>
+			{#if botPanelOpen}
+				<div class="bot-panel-body">
+					{#if botActions.length === 0}
+						<div class="bot-panel-empty">Aucune action pour le moment.</div>
+					{:else}
+						<ul class="bot-panel-list">
+							{#each botActions as action (action.id)}
+								<li class="bot-panel-item">
+									<div class="bot-panel-line">
+										<span class="bot-panel-time">{formatBotTimestamp(action.created_at)}</span>
+										<span class="bot-panel-message">{action.message}</span>
+									</div>
+									{#if action.symbol}
+										<div class="bot-panel-symbol">{action.symbol}</div>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
+		</aside>
+	{/if}
 
 	{#if showAddFundsModal}
 		<div class="modal-backdrop" role="presentation" onclick={closeAddFundsModal}>
@@ -494,6 +700,178 @@
 
 	.profile-menu-item.danger:hover {
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.bot-settings {
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.bot-settings-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.bot-settings-hint {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+	}
+
+	.bot-settings-error {
+		padding: 0 1.5rem 0.75rem;
+		color: var(--accent-red);
+		font-size: 0.75rem;
+	}
+
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 44px;
+		height: 24px;
+		flex-shrink: 0;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.switch-slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: var(--border-secondary);
+		transition: 0.2s;
+		border-radius: 999px;
+	}
+
+	.switch-slider:before {
+		position: absolute;
+		content: '';
+		height: 18px;
+		width: 18px;
+		left: 3px;
+		bottom: 3px;
+		background: var(--bg-secondary);
+		transition: 0.2s;
+		border-radius: 999px;
+		box-shadow: var(--shadow-sm);
+	}
+
+	.switch input:checked + .switch-slider {
+		background: var(--accent-green);
+	}
+
+	.switch input:checked + .switch-slider:before {
+		transform: translateX(20px);
+	}
+
+	.switch input:disabled + .switch-slider {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.bot-panel {
+		position: fixed;
+		right: 1.5rem;
+		bottom: 1.5rem;
+		width: 320px;
+		max-width: calc(100% - 3rem);
+		background: var(--bg-secondary);
+		border: 1px solid var(--border-primary);
+		border-radius: 16px;
+		box-shadow: var(--shadow-xl);
+		z-index: 900;
+	}
+
+	.bot-panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid var(--border-primary);
+	}
+
+	.bot-panel-header strong {
+		display: block;
+		font-size: 0.95rem;
+		color: var(--text-primary);
+	}
+
+	.bot-panel-header span {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+	}
+
+	.bot-panel-toggle {
+		background: transparent;
+		border: 1px solid var(--border-secondary);
+		color: var(--text-primary);
+		border-radius: 999px;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.75rem;
+		cursor: pointer;
+	}
+
+	.bot-panel-body {
+		max-height: 300px;
+		overflow: auto;
+		padding: 0.75rem 1.25rem 1rem;
+	}
+
+	.bot-panel-empty {
+		color: var(--text-muted);
+		font-size: 0.85rem;
+	}
+
+	.bot-panel-list {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.bot-panel-item {
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+	}
+
+	.bot-panel-item:last-child {
+		border-bottom: none;
+		padding-bottom: 0;
+	}
+
+	.bot-panel-line {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+		flex-wrap: wrap;
+	}
+
+	.bot-panel-time {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+	}
+
+	.bot-panel-message {
+		font-size: 0.85rem;
+		color: var(--text-primary);
+	}
+
+	.bot-panel-symbol {
+		margin-top: 0.15rem;
+		font-size: 0.75rem;
+		color: var(--accent-primary);
+		font-weight: 600;
 	}
 
 	.modal-backdrop {

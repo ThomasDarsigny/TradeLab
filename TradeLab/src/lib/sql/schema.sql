@@ -13,6 +13,27 @@ CREATE TABLE accounts (
     UNIQUE(user_id)
 );
 
+-- Table des preferences utilisateur
+CREATE TABLE user_settings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    trading_bot_enabled BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id)
+);
+
+-- Table journal du bot
+CREATE TABLE bot_actions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    action_type VARCHAR(30) NOT NULL,
+    symbol VARCHAR(20),
+    message TEXT NOT NULL,
+    details JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Table des transactions
 CREATE TABLE transactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -24,7 +45,7 @@ CREATE TABLE transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Table des positions (actions détenues)
+-- Table des positions
 CREATE TABLE positions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -41,6 +62,9 @@ CREATE TABLE positions (
 
 -- Créer des index pour les requêtes fréquentes
 CREATE INDEX accounts_user_id_idx ON accounts(user_id);
+CREATE INDEX user_settings_user_id_idx ON user_settings(user_id);
+CREATE INDEX bot_actions_user_id_idx ON bot_actions(user_id);
+CREATE INDEX bot_actions_created_at_idx ON bot_actions(created_at);
 CREATE INDEX transactions_account_id_idx ON transactions(account_id);
 CREATE INDEX transactions_created_at_idx ON transactions(created_at);
 CREATE INDEX positions_account_id_idx ON positions(account_id);
@@ -49,6 +73,8 @@ CREATE INDEX positions_status_idx ON positions(status);
 
 -- RLS (Row Level Security)
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bot_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
 

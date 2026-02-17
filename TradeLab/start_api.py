@@ -7,7 +7,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from services.yfinance_service import app
+from services.yfinance_service_ws import app
 import uvicorn
 
 if __name__ == "__main__":

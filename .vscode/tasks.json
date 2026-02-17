@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "backend: api",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "args": ["start_api.py"],
+      "options": {
+        "cwd": "${workspaceFolder}\\TradeLab"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: dev",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}\\TradeLab"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "bot: start",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "start"],
+      "options": {
+        "cwd": "${workspaceFolder}\\TradingBot"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "run: all",
+      "dependsOrder": "parallel",
+      "dependsOn": ["backend: api", "frontend: dev", "bot: start"],
+      "problemMatcher": []
+    }
+  ]
+}

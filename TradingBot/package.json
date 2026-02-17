@@ -1,0 +1,13 @@
+{
+  "name": "tradelab-trading-bot",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.93.3",
+    "dotenv": "^16.4.7"
+  }
+}

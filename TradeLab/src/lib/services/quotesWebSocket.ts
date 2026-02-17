@@ -13,7 +13,7 @@ export class QuotesWebSocket {
 		} else {
 			const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 			const host = window.location.hostname;
-			const port = '8000';
+			const port = '8001';
 			this.url = `${protocol}//${host}:${port}/ws/quotes`;
 		}
 	}

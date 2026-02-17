@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "yahoo-finance2": "^3.13.0"

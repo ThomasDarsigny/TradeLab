@@ -26,6 +26,17 @@ session.headers.update({
     'Origin': 'https://finance.yahoo.com'
 })
 
+def _to_list(series_like):
+    if series_like is None:
+        return []
+    if hasattr(series_like, "columns"):
+        return series_like.values.flatten().tolist()
+    if hasattr(series_like, "tolist"):
+        return series_like.tolist()
+    if hasattr(series_like, "values"):
+        return series_like.values.flatten().tolist()
+    return list(series_like)
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -87,7 +98,7 @@ def search_symbols(q: str, limit: int = 100):
 def get_quote(symbol: str):
     """Récupère le quote d'un symbole"""
     try:
-        ticker = yf.Ticker(symbol, session=session)
+        ticker = yf.Ticker(symbol)
         info = ticker.fast_info
         
         return {
@@ -107,25 +118,40 @@ def get_quote(symbol: str):
 @app.get("/history/{symbol}")
 def get_history(symbol: str, period: str = "1mo", interval: str = "1d"):
     """Récupère l'historique des prix (chandeliers)"""
+    hist = None
     try:
-        ticker = yf.Ticker(symbol, session=session)
+        ticker = yf.Ticker(symbol)
         hist = ticker.history(period=period, interval=interval)
-        
-        if hist.empty:
-            raise HTTPException(status_code=404, detail="No data available")
-        
-        timestamps = [int(ts.timestamp()) for ts in hist.index]
-        
-        return {
-            'timestamps': timestamps,
-            'open': hist['Open'].tolist(),
-            'high': hist['High'].tolist(),
-            'low': hist['Low'].tolist(),
-            'close': hist['Close'].tolist(),
-            'volume': hist['Volume'].tolist()
-        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[history] primary error symbol={symbol} period={period} interval={interval}: {e}")
+
+    if hist is None or getattr(hist, "empty", True):
+        try:
+            hist = yf.download(
+                symbol,
+                period=period,
+                interval=interval,
+                progress=False,
+                threads=False,
+                group_by="column"
+            )
+        except Exception as e:
+            print(f"[history] fallback error symbol={symbol} period={period} interval={interval}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    if hist.empty:
+        raise HTTPException(status_code=404, detail="No data available")
+
+    timestamps = [int(ts.timestamp()) for ts in hist.index]
+
+    return {
+        'timestamps': timestamps,
+        'open': _to_list(hist['Open']),
+        'high': _to_list(hist['High']),
+        'low': _to_list(hist['Low']),
+        'close': _to_list(hist['Close']),
+        'volume': _to_list(hist['Volume'])
+    }
 
 @app.websocket("/ws/quotes")
 async def websocket_quotes(websocket: WebSocket):
@@ -157,7 +183,7 @@ async def websocket_quotes(websocket: WebSocket):
             
             for sub_symbol in manager.subscriptions.get(websocket, set()):
                 try:
-                    ticker = yf.Ticker(sub_symbol, session=session)
+                    ticker = yf.Ticker(sub_symbol)
                     info = ticker.fast_info
                     
                     quote_data = {
