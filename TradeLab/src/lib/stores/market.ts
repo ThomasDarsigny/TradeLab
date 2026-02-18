@@ -52,7 +52,7 @@ export function isInWatchlist(symbol: string): Promise<boolean> {
 export function addToRecent(symbol: string) {
     recentSymbols.update(items => {
         const updated = [symbol.toUpperCase(), ...items.filter(s => s !== symbol.toUpperCase())];
-        const limited = updated.slice(0, 10);
+        const limited = updated.slice(0, 20);
         if (browser) {
             localStorage.setItem(RECENT_KEY, JSON.stringify(limited));
         }

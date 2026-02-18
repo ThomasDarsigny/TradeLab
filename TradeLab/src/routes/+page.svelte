@@ -13,7 +13,8 @@
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
 		if (target) {
-			target.style.display = 'none';
+			const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect fill="rgba(59, 130, 246, 0.1)" width="40" height="40" rx="10"/><circle cx="20" cy="20" r="6" fill="rgba(59, 130, 246, 0.8)"/></svg>`;
+			target.src = 'data:image/svg+xml;base64,' + btoa(svg);
 		}
 	};
 
@@ -28,6 +29,18 @@
 	);
 
 	const totalGain = $derived(totalCurrent - totalInvested);
+
+	const gainForLifetime = $derived.by(() => {
+		if (!account || !transactions) return 0;
+		
+		return transactions.reduce((total, tx) => {
+			if (tx.type === 'sell') return total + tx.amount;
+			if (tx.type === 'buy') return total - tx.amount;
+			if (tx.type === 'deposit') return total - tx.amount;
+			if (tx.type === 'withdrawal') return total + tx.amount;
+			return total;
+		}, 0);
+	});
 
 	async function loadPortfolio() {
 		loading = true;
@@ -63,8 +76,69 @@
 		}
 	}
 
+	async function updateAccountData() {
+		try {
+			const accountRes = await fetch('/api/account', { credentials: 'include' });
+
+			if (accountRes.ok) {
+				const accountData = await accountRes.json();
+				if (accountData.account) {
+					account = accountData.account;
+				}
+			}
+		} catch (err) {
+		}
+	}
+
+	function positionsHaveChanged(oldPositions: Position[], newPositions: Position[]): boolean {
+		if (oldPositions.length !== newPositions.length) return true;
+		
+		for (let i = 0; i < oldPositions.length; i++) {
+			const old = oldPositions[i];
+			const newPos = newPositions[i];
+			
+			if (old.symbol !== newPos.symbol || 
+				old.quantity !== newPos.quantity || 
+				old.entry_price !== newPos.entry_price) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	async function updatePositionsData() {
+		try {
+			const positionsRes = await fetch('/api/account/positions', { credentials: 'include' });
+
+			if (positionsRes.ok) {
+				const positionsData = await positionsRes.json();
+				if (positionsData.positions) {
+					const newPositions = positionsData.positions || [];
+					
+					if (positionsHaveChanged(positions, newPositions)) {
+						positions = newPositions;
+					}
+				}
+			}
+		} catch (err) {
+		}
+	}
+
 	onMount(() => {
 		loadPortfolio();
+		
+		const accountInterval = setInterval(() => {
+			updateAccountData();
+		}, 5000);
+		
+		const positionsInterval = setInterval(() => {
+			updatePositionsData();
+		}, 15000);
+		
+		return () => {
+			clearInterval(accountInterval);
+			clearInterval(positionsInterval);
+		};
 	});
 </script>
 
@@ -104,7 +178,7 @@
 			</div>
 			<div class="summary-card" class:positive={totalGain >= 0} class:negative={totalGain < 0}>
 				<span>Gain / Perte</span>
-				<strong>{totalGain >= 0 ? '+' : ''}${currency.format(totalGain)}</strong>
+				<strong>{gainForLifetime >= 0 ? '+' : ''}${currency.format(gainForLifetime)}</strong>
 			</div>
 		</section>
 
@@ -203,34 +277,33 @@
 	}
 
 	.summary-card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-primary);
-		border-radius: 16px;
-		padding: 1.25rem;
-		box-shadow: var(--shadow-lg);
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05));
+		border: 1px solid rgba(59, 130, 246, 0.2);
+		border-radius: 12px;
+		padding: 1.5rem;
+		box-shadow: 0 4px 6px -2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(59, 130, 246, 0.05), inset 0 0 1px rgba(255, 255, 255, 0.1);
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
+		transition: all 0.3s ease;
+	}
+
+	.summary-card:hover {
+		border-color: rgba(59, 130, 246, 0.3);
+		box-shadow: 0 12px 24px -8px rgba(59, 130, 246, 0.1), 0 0 0 1px rgba(59, 130, 246, 0.1);
 	}
 
 	.summary-card span {
 		color: var(--text-secondary);
-		font-size: 0.85rem;
+		font-size: 0.8rem;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.08em;
+		font-weight: 600;
 	}
 
 	.summary-card strong {
 		color: var(--text-primary);
 		font-size: 1.4rem;
-	}
-
-	.summary-card.positive strong {
-		color: var(--accent-green);
-	}
-
-	.summary-card.negative strong {
-		color: var(--accent-red);
 	}
 
 	.charts-section {
@@ -255,8 +328,8 @@
 
 	.positions-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-		gap: 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		gap: 1.25rem;
 	}
 
 	.position-card {
@@ -264,19 +337,20 @@
 		flex-direction: column;
 		justify-content: space-between;
 		gap: 0.75rem;
-		padding: 1rem 1.2rem;
-		border-radius: 16px;
-		border: 1px solid var(--border-primary);
-		background: var(--bg-secondary);
+		padding: 1.25rem;
+		border-radius: 12px;
+		border: 1px solid rgba(59, 130, 246, 0.1);
+		background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(37, 99, 235, 0.02));
 		color: inherit;
 		text-decoration: none;
-		box-shadow: var(--shadow-lg);
-		transition: transform 0.2s ease, border-color 0.2s ease;
+		box-shadow: 0 4px 6px -2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(59, 130, 246, 0.05);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.position-card:hover {
-		transform: translateY(-2px);
-		border-color: rgba(59, 130, 246, 0.5);
+		transform: translateY(-4px);
+		border-color: rgba(59, 130, 246, 0.2);
+		box-shadow: 0 20px 25px -5px rgba(59, 130, 246, 0.15), 0 0 0 1px rgba(59, 130, 246, 0.1);
 	}
 
 	.position-main {

@@ -3,7 +3,7 @@
 	import { supabase } from '$lib/supabaseClient';
 	import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 	import { setAccount, clearAccount } from '$lib/stores/account';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
@@ -23,6 +23,8 @@
 	let tradingBotEnabled = $state(false);
 	let tradingBotLoading = $state(false);
 	let tradingBotError = $state<string | null>(null);
+	let botSymbols = $state('BTC-USD');
+	let botSymbolsLoading = $state(false);
 	let currentUserId = $state<string | null>(null);
 	let botActions = $state<BotAction[]>([]);
 	let botPanelOpen = $state(true);
@@ -59,6 +61,7 @@
 			}
 			const data = await response.json();
 			tradingBotEnabled = Boolean(data?.enabled);
+			botSymbols = data?.symbols || 'BTC-USD';
 		} catch (error) {
 			tradingBotError = 'Impossible de charger le statut du bot.';
 		} finally {
@@ -103,7 +106,9 @@
 					botActions = [action, ...botActions].slice(0, 50);
 				}
 			)
-			.subscribe();
+			.subscribe((status: string) => {
+				console.log(`[Bot Actions] Subscription status: ${status}`);
+			});
 	};
 
 	onMount(() => {
@@ -119,6 +124,9 @@
 				supabase.removeChannel(botSubscription);
 				botSubscription = null;
 				botActions = [];
+			}
+			if (!user && !$page.url.pathname.startsWith('/auth') && $page.url.pathname !== '/login') {
+				goto('/login');
 			}
 		};
 
@@ -141,7 +149,8 @@
 			await refreshUser();
 			await refreshAccount();
 			if (event === 'SIGNED_OUT') {
-				goto('/auth');
+				await invalidateAll();
+				await goto('/login');
 			}
 		});
 
@@ -187,8 +196,11 @@
 		userEmail = null;
 		currentUserId = null;
 		clearAccount();
+		localStorage.clear();
+		sessionStorage.clear();
 		await supabase.auth.signOut();
-		await goto('/auth');
+		await new Promise(resolve => setTimeout(resolve, 500));
+		goto('/login', { replaceState: true });
 	}
 
 	function toggleProfileMenu() {
@@ -273,11 +285,14 @@
 		}
 	}
 
-	async function updateTradingBotSetting(enabled: boolean) {
+	async function updateTradingBotSetting(enabled: boolean, symbols?: string) {
 		tradingBotError = null;
 		const previous = tradingBotEnabled;
+		const previousSymbols = botSymbols;
 		tradingBotEnabled = enabled;
+		if (symbols !== undefined) botSymbols = symbols;
 		tradingBotLoading = true;
+		
 		try {
 			const response = await fetch('/api/settings/trading-bot', {
 				method: 'PUT',
@@ -285,20 +300,32 @@
 					'Content-Type': 'application/json'
 				},
 				credentials: 'include',
-				body: JSON.stringify({ enabled })
+				body: JSON.stringify({ 
+					enabled,
+					symbols: symbols !== undefined ? symbols : botSymbols
+				})
 			});
 
 			if (!response.ok) {
-				const data = await response.json().catch(() => null);
-				throw new Error(data?.error || 'Erreur lors de la mise a jour.');
+				let errorMessage = 'Erreur lors de la mise a jour.';
+				try {
+					const data = await response.json();
+					errorMessage = data?.error || errorMessage;
+				} catch {
+				}
+				throw new Error(errorMessage);
 			}
 
+			tradingBotError = null;
+			
 			if (enabled && currentUserId) {
 				await loadBotActions(currentUserId);
 			}
 		} catch (error) {
 			tradingBotEnabled = previous;
+			botSymbols = previousSymbols;
 			tradingBotError = error instanceof Error ? error.message : 'Erreur lors de la mise a jour.';
+			console.error('[Bot Settings Error]', error);
 		} finally {
 			tradingBotLoading = false;
 		}
@@ -355,16 +382,15 @@
 					</svg>
 					Actualités
 				</a>
-				{#if userEmail}
-					<div class="profile-dropdown">
-						<button class="profile-icon-btn" onclick={toggleProfileMenu} aria-label="Menu profil">
-							<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<circle cx="12" cy="8" r="4"></circle>
-								<path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path>
-							</svg>
-						</button>
-						
-						{#if showProfileMenu}
+				<div class="profile-dropdown">
+					<button class="profile-icon-btn" onclick={toggleProfileMenu} aria-label="Menu profil">
+						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="8" r="4"></circle>
+							<path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path>
+						</svg>
+					</button>
+					
+					{#if showProfileMenu}
 							<div class="profile-menu">
 								<div class="profile-menu-header">
 									<div class="profile-avatar">
@@ -388,11 +414,16 @@
 								</button>
 								
 								<div class="profile-menu-divider"></div>
-								<div class="theme-section-title">Trading bot</div>
+								<div class="theme-section-title" style="display: flex; align-items: center; gap: 0.5rem;">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<circle cx="12" cy="12" r="1"></circle>
+										<path d="M12 7v10M5 12h14"></path>
+									</svg>
+									Trading bot
+								</div>
 								<div class="profile-menu-item bot-settings">
 									<div class="bot-settings-info">
 										<span>Activer le bot de trading</span>
-										<small class="bot-settings-hint">Strategie ADX, RSI, EMA et ATR</small>
 									</div>
 									<label class="switch">
 										<input
@@ -404,8 +435,37 @@
 										<span class="switch-slider"></span>
 									</label>
 								</div>
+								
+								{#if tradingBotEnabled}
+									<div class="bot-symbols-config">
+										<label for="bot-symbols">Symboles à trader</label>
+										<textarea
+											id="bot-symbols"
+											bind:value={botSymbols}
+											disabled={tradingBotLoading}
+											placeholder="BTC-USD"
+											rows="3"
+										></textarea>
+										<button 
+											class="bot-symbols-save"
+											onclick={() => updateTradingBotSetting(true, botSymbols)}
+											disabled={tradingBotLoading}
+										>
+											{tradingBotLoading ? '⏳ Mise à jour...' : '✓ Sauvegarder les symboles'}
+										</button>
+										<small class="bot-symbols-hint">Séparez les symboles par des virgules</small>
+									</div>
+								{/if}
+								
 								{#if tradingBotError}
-									<div class="bot-settings-error">{tradingBotError}</div>
+									<div class="bot-settings-error">
+										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<circle cx="12" cy="12" r="10"></circle>
+											<line x1="12" y1="8" x2="12" y2="12"></line>
+											<line x1="12" y1="16" x2="12.01" y2="16"></line>
+										</svg>
+										{tradingBotError}
+									</div>
 								{/if}
 								
 								<div class="profile-menu-divider"></div>
@@ -467,8 +527,7 @@
 								</button>
 							</div>
 						{/if}
-					</div>
-				{/if}
+				</div>
 			</nav>
 		</header>
 	{/if}
@@ -608,7 +667,7 @@
 		background: var(--bg-secondary);
 		border: 1px solid var(--border-primary);
 		border-radius: 12px;
-		min-width: 280px;
+		min-width: 310px;
 		box-shadow: var(--shadow-xl);
 		z-index: 1000;
 		animation: slideDown 0.2s ease-out;
@@ -714,14 +773,86 @@
 		gap: 0.25rem;
 	}
 
-	.bot-settings-hint {
-		font-size: 0.75rem;
-		color: var(--text-muted);
+	.bot-settings-error {
+		padding: 0.75rem 1.5rem;
+		color: var(--accent-red);
+		font-size: 0.85rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: rgba(239, 68, 68, 0.1);
+		border-left: 3px solid var(--accent-red);
 	}
 
-	.bot-settings-error {
-		padding: 0 1.5rem 0.75rem;
-		color: var(--accent-red);
+	.bot-symbols-config {
+		padding: 0 1.5rem 1rem;
+		border-top: 1px solid var(--border-primary);
+		margin-top: 0.5rem;
+	}
+
+	.bot-symbols-config label {
+		display: block;
+		margin-top: 1rem;
+		margin-bottom: 0.5rem;
+		color: var(--text-primary);
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+
+	.bot-symbols-config textarea {
+		width: 100%;
+		padding: 0.6rem 0.8rem;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-primary);
+		border-radius: 8px;
+		color: var(--text-primary);
+		font-family: 'Monaco', 'Courier New', monospace;
+		font-size: 0.85rem;
+		resize: vertical;
+		outline: none;
+		transition: all 0.2s;
+	}
+
+	.bot-symbols-config textarea:focus {
+		border-color: var(--accent-primary);
+		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+	}
+
+	.bot-symbols-config textarea:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.bot-symbols-save {
+		margin-top: 0.75rem;
+		width: 100%;
+		padding: 0.75rem;
+		background: linear-gradient(135deg, var(--accent-primary), #0652dd);
+		color: white;
+		border: none;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.9rem;
+		font-weight: 600;
+		transition: all 0.2s;
+		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+	}
+
+	.bot-symbols-save:hover:not(:disabled) {
+		transform: translateY(-2px);
+		box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+	}
+
+	.bot-symbols-save:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+		box-shadow: none;
+	}
+
+	.bot-symbols-hint {
+		display: block;
+		margin-top: 0.5rem;
+		color: var(--text-muted);
 		font-size: 0.75rem;
 	}
 
@@ -779,15 +910,19 @@
 
 	.bot-panel {
 		position: fixed;
-		right: 1.5rem;
+		left: 1.5rem;
 		bottom: 1.5rem;
-		width: 320px;
+		width: 310px;
 		max-width: calc(100% - 3rem);
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-primary);
+		background: linear-gradient(135deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), 0.95));
+		border: 1px solid rgba(59, 130, 246, 0.15);
 		border-radius: 16px;
-		box-shadow: var(--shadow-xl);
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+					inset 0 0 1px rgba(59, 130, 246, 0.1);
 		z-index: 900;
+		overflow: hidden;
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
 	}
 
 	.bot-panel-header {
@@ -796,13 +931,15 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem 1.25rem;
-		border-bottom: 1px solid var(--border-primary);
+		border-bottom: 1px solid rgba(59, 130, 246, 0.1);
+		background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), transparent);
 	}
 
 	.bot-panel-header strong {
 		display: block;
 		font-size: 0.95rem;
 		color: var(--text-primary);
+		font-weight: 600;
 	}
 
 	.bot-panel-header span {
@@ -811,18 +948,25 @@
 	}
 
 	.bot-panel-toggle {
-		background: transparent;
-		border: 1px solid var(--border-secondary);
+		background: rgba(59, 130, 246, 0.15);
+		border: 1px solid rgba(59, 130, 246, 0.3);
 		color: var(--text-primary);
-		border-radius: 999px;
-		padding: 0.35rem 0.75rem;
+		border-radius: 6px;
+		padding: 0.4rem 0.8rem;
 		font-size: 0.75rem;
 		cursor: pointer;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.bot-panel-toggle:hover {
+		background: rgba(59, 130, 246, 0.25);
+		border-color: rgba(59, 130, 246, 0.5);
 	}
 
 	.bot-panel-body {
-		max-height: 300px;
-		overflow: auto;
+		max-height: 350px;
+		overflow-y: auto;
 		padding: 0.75rem 1.25rem 1rem;
 	}
 
@@ -841,13 +985,29 @@
 	}
 
 	.bot-panel-item {
+		padding: 0.75rem;
+		border-left: 3px solid rgba(59, 130, 246, 0.4);
+		border-radius: 6px;
+		background: rgba(59, 130, 246, 0.05);
+		border-bottom: none;
 		padding-bottom: 0.75rem;
-		border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+		animation: slideIn 0.3s ease;
 	}
 
 	.bot-panel-item:last-child {
 		border-bottom: none;
-		padding-bottom: 0;
+		padding-bottom: 0.75rem;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateX(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
 	}
 
 	.bot-panel-line {
@@ -860,18 +1020,21 @@
 	.bot-panel-time {
 		font-size: 0.7rem;
 		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.bot-panel-message {
 		font-size: 0.85rem;
 		color: var(--text-primary);
+		flex: 1;
 	}
 
 	.bot-panel-symbol {
-		margin-top: 0.15rem;
+		margin-top: 0.25rem;
 		font-size: 0.75rem;
 		color: var(--accent-primary);
-		font-weight: 600;
+		font-weight: 700;
+		text-transform: uppercase;
 	}
 
 	.modal-backdrop {

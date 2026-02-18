@@ -5,11 +5,16 @@
 		transactions?: Transaction[];
 	}>();
 
+	let expandAll = $state(false);
 
 	const sortedTransactions = $derived.by(() =>
 		[...transactions].sort(
 			(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 		)
+	);
+
+	const displayedTransactions = $derived(
+		expandAll ? sortedTransactions : sortedTransactions.slice(0, 5)
 	);
 
 	const formatDate = (value: string) =>
@@ -43,8 +48,15 @@
 
 <div class="history-card">
 	<div class="history-header">
-		<h3>Historique des transactions</h3>
-		<p>Dernieres operations enregistrees sur le compte</p>
+		<div>
+			<h3>Historique des transactions</h3>
+			<p>Dernieres operations enregistrees sur le compte</p>
+		</div>
+		{#if transactions.length > 5}
+			<button class="toggle-btn" onclick={() => (expandAll = !expandAll)}>
+				{expandAll ? 'Voir moins' : 'Voir plus'}
+			</button>
+		{/if}
 	</div>
 
 	{#if sortedTransactions.length === 0}
@@ -58,7 +70,7 @@
 				<span>Quantite</span>
 				<span class="amount">Montant</span>
 			</div>
-			{#each sortedTransactions as tx (tx.id)}
+			{#each displayedTransactions as tx (tx.id)}
 				<div class="history-row">
 					<span>{formatDate(tx.created_at)}</span>
 					<span class="pill">{typeLabel(tx.type)}</span>
@@ -83,6 +95,13 @@
 		box-shadow: var(--shadow-lg);
 	}
 
+	.history-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1.5rem;
+	}
+
 	.history-header h3 {
 		margin: 0 0 0.35rem 0;
 		color: var(--text-primary);
@@ -90,9 +109,28 @@
 	}
 
 	.history-header p {
-		margin: 0 0 1.5rem 0;
+		margin: 0;
 		color: var(--text-secondary);
 		font-size: 0.95rem;
+	}
+
+	.toggle-btn {
+		background: var(--accent-primary);
+		border: none;
+		color: white;
+		padding: 0.5rem 1rem;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 600;
+		transition: all 0.2s ease;
+		flex-shrink: 0;
+	}
+
+	.toggle-btn:hover {
+		background: var(--accent-hover);
+		transform: translateY(-2px);
+		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 	}
 
 	.history-table {

@@ -30,6 +30,8 @@
                 if (signupError) throw signupError;
 
                 if (data.user) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
                     const response = await fetch('/api/auth/signup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -37,7 +39,11 @@
                     });
 
                     if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Erreur lors de la création du compte');
                     }
+                } else {
+                    throw new Error('Impossible de créer le compte utilisateur');
                 }
 
                 message = 'Inscription réussie. Vous pouvez maintenant vous connecter.';

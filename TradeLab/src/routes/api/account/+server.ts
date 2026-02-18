@@ -2,7 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { getAccount, calculateAccountStats, createAccount } from '$lib/services/accountService';
 import { normalizeAccount } from '$lib/utils/normalize';
 
-// GET /api/account - Récupérer les infos du compte
+// GET /api/account - Récupérer les infos du compte (crée automatiquement s'il n'existe pas)
 export const GET: RequestHandler = async ({ locals }) => {
     try {
         const { session } = await locals.safeGetSession();
@@ -11,10 +11,10 @@ export const GET: RequestHandler = async ({ locals }) => {
             return json({ error: 'Non authentifié' }, { status: 401 });
         }
 
-        const account = await getAccount(session.user.id, locals.supabase);
+        let account = await getAccount(session.user.id, locals.supabase);
 
         if (!account) {
-            return json({ error: 'Compte non trouvé' }, { status: 404 });
+            account = await createAccount(session.user.id, 100000, locals.supabase);
         }
 
         const stats = await calculateAccountStats(account.id, locals.supabase);

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TradeForm from './TradeForm.svelte';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack, tick } from 'svelte';
 	import {
 		createChart,
 		CandlestickSeries,
@@ -12,6 +12,7 @@
 		type CandlestickData
 	} from 'lightweight-charts';
 	import { watchlist, addToWatchlist, removeFromWatchlist } from '$lib/stores/market';
+	import { getCandlestickWebSocket, type CandlestickUpdate } from '$lib/services/candlestickWebSocket';
 	import './StockDetail.css';
 
 	let {
@@ -40,18 +41,30 @@
 	let chartType = $state<'candles' | 'line'>('candles');
 	let chartLoading = $state(false);
 	let chartError = $state('');
-	let chartContainer: HTMLDivElement | undefined = $state();
-	let chart: IChartApi | null = $state(null);
-	let candleSeries: ISeriesApi<'Candlestick'> | null = $state(null);
-	let smaSeries: ISeriesApi<'Line'> | null = $state(null);
-	let lineSeries: ISeriesApi<'Line'> | null = $state(null);
+	let chartContainer = $state<HTMLDivElement | undefined>(undefined);
+	let chart: IChartApi | null = null;
+	let candleSeries: ISeriesApi<'Candlestick'> | null = null;
+	let smaSeries: ISeriesApi<'Line'> | null = null;
+	let lineSeries: ISeriesApi<'Line'> | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let refreshActive = false;
 	let refreshInFlight = false;
 	let isInWatchlist = $derived($watchlist.includes(symbol.toUpperCase()));
+	let candlestickWs: any = null;
+	let lastCandleTime: number = 0;
 
-	function isMarketOpen(): { stock: boolean; crypto: boolean } {
+	function isMarketOpen(): { stock: boolean; crypto: boolean; isCrypto: boolean } {
+		const isCrypto = symbol.toUpperCase().includes('-USD') || 
+		                symbol.toUpperCase().includes('-BTC') || 
+		                symbol.toUpperCase().includes('-USDT') ||
+		                symbol.toUpperCase().includes('ETH') ||
+		                symbol.toUpperCase().includes('BTC');
+		
+		if (isCrypto) {
+			return { stock: true, crypto: true, isCrypto: true };
+		}
+
 		const now = new Date();
 		const etTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
 		const day = etTime.getDay();
@@ -59,24 +72,41 @@
 		const minutes = etTime.getMinutes();
 		const currentMinutes = hours * 60 + minutes;
 		
-		const cryptoOpen = true;
-		
 		const stockOpen = day >= 1 && day <= 5 &&
 			currentMinutes >= 9 * 60 + 30 &&
 			currentMinutes < 16 * 60;
 		
-		return { stock: stockOpen, crypto: cryptoOpen };
+		return { stock: stockOpen, crypto: true, isCrypto: false };
 	}
 
 	let marketStatus = $state(isMarketOpen());
 
-	onMount(() => {
+	onMount(async () => {
 		if (symbol) {
-			loadChartData(selectedPeriod);
+			await tick();
+			await loadChartData(selectedPeriod);
+			
+			try {
+				candlestickWs = getCandlestickWebSocket();
+				await candlestickWs.connect();
+				candlestickWs.subscribe(symbol, handleCandleUpdate);
+				console.log(` WebSocket candlesticks connected for ${symbol}`);
+			} catch (err) {
+				console.error(' Failed to connect candlestick WebSocket:', err);
+			}
 		}
 	});
 
 	onDestroy(() => {
+		if (candlestickWs && symbol) {
+			try {
+				candlestickWs.unsubscribe(symbol, handleCandleUpdate);
+				console.log(` WebSocket unsubscribed from ${symbol}`);
+			} catch (err) {
+				console.error(' Failed to unsubscribe from candlestick WebSocket:', err);
+			}
+		}
+		
 		stopAutoRefresh();
 		resizeObserver?.disconnect();
 		resizeObserver = null;
@@ -94,8 +124,13 @@
 	});
 
 	$effect(() => {
-		if (selectedPeriod && !loading) {
-			loadChartData(selectedPeriod);
+		if (symbol && selectedPeriod) {
+			untrack(() => {
+				void (async () => {
+					await tick();
+					await loadChartData(selectedPeriod);
+				})();
+			});
 		}
 	});
 
@@ -190,8 +225,52 @@
 
 	function normalizeTimestamp(value: string | number): UTCTimestamp {
 		const raw = Number(value);
-		const offsetSeconds = new Date(raw * 1000).getTimezoneOffset() * 60;
-		return (raw - offsetSeconds) as UTCTimestamp;
+		if (!Number.isFinite(raw)) {
+			return 0 as UTCTimestamp;
+		}
+		const seconds = raw > 1e11 ? Math.floor(raw / 1000) : Math.floor(raw);
+		return seconds as UTCTimestamp;
+	}
+
+	let pendingCandleUpdates: CandlestickUpdate[] = [];
+
+	function handleCandleUpdate(data: CandlestickUpdate) {
+		console.log('📡 WebSocket recoit :', data);
+		console.log('📊 Etat de candleSeries :', candleSeries);
+
+		if (!candleSeries) {
+			pendingCandleUpdates.push(data);
+			console.warn('⚠️ candleSeries est null, update bufferisée');
+			return;
+		}
+
+		if (pendingCandleUpdates.length > 0) {
+			for (const update of pendingCandleUpdates) {
+				applyCandleUpdate(update);
+			}
+			pendingCandleUpdates = [];
+		}
+		applyCandleUpdate(data);
+	}
+
+	function applyCandleUpdate(data: CandlestickUpdate) {
+		const timestamp = normalizeTimestamp(data.time);
+		const candleData: CandlestickData = {
+			time: timestamp,
+			open: Number(data.open),
+			high: Number(data.high),
+			low: Number(data.low),
+			close: Number(data.close)
+		};
+
+		if (candleSeries && timestamp > lastCandleTime) {
+			console.log('🔥 Envoi au graphique ->', data.close);
+			candleSeries.update(candleData);
+			lineSeries?.update({ time: timestamp, value: candleData.close });
+			stockData.price = candleData.close;
+			lastCandleTime = timestamp;
+			chart?.timeScale().scrollToRealTime();
+		}
 	}
 
 	function initChart() {
@@ -199,6 +278,14 @@
 
 		const width = Math.floor(chartContainer.clientWidth);
 		const height = Math.floor(chartContainer.clientHeight);
+
+		const formatLocalTime = (time: UTCTimestamp) => {
+			const date = new Date(Number(time) * 1000);
+			return date.toLocaleTimeString('fr-CA', {
+				hour: '2-digit',
+				minute: '2-digit'
+			});
+		};
 
 		chart = createChart(chartContainer, {
 			width: width > 0 ? width : undefined,
@@ -212,10 +299,17 @@
 				horzLines: { color: '#2d3748' }
 			},
 			rightPriceScale: { borderColor: '#2d3748' },
-			timeScale: { borderColor: '#2d3748', timeVisible: true }
+			timeScale: {
+				borderColor: '#2d3748',
+				timeVisible: true,
+				tickMarkFormatter: formatLocalTime
+			},
+			localization: {
+				timeFormatter: formatLocalTime
+			}
 		});
 
-		candleSeries = chart.addSeries(CandlestickSeries, {
+		const _candles = chart.addSeries(CandlestickSeries, {
 			upColor: '#10b981',
 			downColor: '#ef4444',
 			borderUpColor: '#10b981',
@@ -223,16 +317,20 @@
 			wickUpColor: '#10b981',
 			wickDownColor: '#ef4444'
 		});
+		candleSeries = _candles;
 
-		smaSeries = chart.addSeries(LineSeries, {
+		const _sma = chart.addSeries(LineSeries, {
 			color: '#3b82f6',
 			lineWidth: 2
 		});
+		smaSeries = _sma;
 
-		lineSeries = chart.addSeries(LineSeries, {
+		const _line = chart.addSeries(LineSeries, {
 			color: '#10b981',
 			lineWidth: 2
 		});
+		lineSeries = _line;
+		console.log('✅ Series init:', { candleSeries, smaSeries, lineSeries });
 
 		if (chartType === 'line') {
 			candleSeries.applyOptions({ visible: false });
@@ -305,9 +403,20 @@
 			}
 
 			candleSeries?.setData(candles);
+			lastCandleTime = candles.length > 0 ? (candles[candles.length - 1].time as any) : 0;
+			console.log(`📊 lastCandleTime défini à ${lastCandleTime}`);
+			
 			smaSeries?.setData(buildSMA(data.close.slice(0, length), data.timestamps.slice(0, length), 20));
 			lineSeries?.setData(lineData);
 			chart?.timeScale().fitContent();
+			
+			if (pendingCandleUpdates.length > 0) {
+				console.log(`✅ Application de ${pendingCandleUpdates.length} updates bufferisées après loadChartData`);
+				for (const update of pendingCandleUpdates) {
+					applyCandleUpdate(update);
+				}
+				pendingCandleUpdates = [];
+			}
 		} catch (err) {
 			chartError = 'Erreur lors du chargement du graphique';
 		} finally {
@@ -438,17 +547,20 @@
 					</div>
 
 					<div class="chart-container" style="position: relative; height: 300px;">
+						<div
+							class="chart-canvas"
+							bind:this={chartContainer}
+							style="opacity: {chartLoading ? '0.5' : '1'}; width: 100%; height: 100%;"
+						></div>
 						{#if chartLoading}
-							<div class="chart-loading">
+							<div class="chart-loading" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; z-index: 10;">
 								<div class="spinner"></div>
 							</div>
 						{/if}
 						{#if chartError && !chartLoading}
-							<div class="chart-error">
+							<div class="chart-error" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; z-index: 10;">
 								<p>{chartError}</p>
 							</div>
-						{:else}
-							<div class="chart-canvas" bind:this={chartContainer}></div>
 						{/if}
 					</div>
 
@@ -513,11 +625,16 @@
 						</div>
 
 						<div class="market-status-indicator">
-							{#if marketStatus.stock}
-								<div class="status-badge open">
-									<span class="status-dot"></span>
-									Marché ouvert
-								</div>
+						{#if marketStatus.isCrypto}
+							<div class="status-badge open">
+								<span class="status-dot"></span>
+								Marché ouvert 24h/24
+							</div>
+						{:else if marketStatus.stock}
+									<div class="status-badge open">
+										<span class="status-dot"></span>
+										Marché ouvert
+									</div>
 							{:else}
 								<div class="status-badge closed">
 									<span class="status-dot"></span>

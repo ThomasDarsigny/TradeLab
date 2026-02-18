@@ -4,7 +4,7 @@ import { PUBLIC_FINNHUB_API_KEY } from '$env/static/public';
 import { error } from '@sveltejs/kit';
 
 const mapGnewsArticles = (data: any) =>
-	(data?.articles ?? []).slice(0, 10).map((article: any) => ({
+	(data?.articles ?? []).slice(0, 50).map((article: any) => ({
 		title: article.title,
 		url: article.url,
 		source: article.source?.name,
@@ -14,7 +14,7 @@ const mapGnewsArticles = (data: any) =>
 	}));
 
 const mapFinnhubArticles = (data: any) =>
-	(data ?? []).slice(0, 10).map((article: any) => ({
+	(data ?? []).slice(0, 50).map((article: any) => ({
 		title: article.headline,
 		url: article.url,
 		source: article.source,

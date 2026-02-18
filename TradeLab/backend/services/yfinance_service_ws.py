@@ -41,6 +41,8 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self.subscriptions: dict = {}
+        self.candlestick_connections: List[WebSocket] = []
+        self.candlestick_subscriptions: dict = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -60,6 +62,25 @@ class ConnectionManager:
     def unsubscribe(self, websocket: WebSocket, symbol: str):
         if websocket in self.subscriptions:
             self.subscriptions[websocket].discard(symbol.upper())
+
+    async def connect_candlestick(self, websocket: WebSocket):
+        await websocket.accept()
+        self.candlestick_connections.append(websocket)
+        self.candlestick_subscriptions[websocket] = set()
+
+    def disconnect_candlestick(self, websocket: WebSocket):
+        if websocket in self.candlestick_connections:
+            self.candlestick_connections.remove(websocket)
+        if websocket in self.candlestick_subscriptions:
+            del self.candlestick_subscriptions[websocket]
+
+    def subscribe_candlestick(self, websocket: WebSocket, symbol: str):
+        if websocket in self.candlestick_subscriptions:
+            self.candlestick_subscriptions[websocket].add(symbol.upper())
+
+    def unsubscribe_candlestick(self, websocket: WebSocket, symbol: str):
+        if websocket in self.candlestick_subscriptions:
+            self.candlestick_subscriptions[websocket].discard(symbol.upper())
 
 manager = ConnectionManager()
 
@@ -142,7 +163,12 @@ def get_history(symbol: str, period: str = "1mo", interval: str = "1d"):
     if hist.empty:
         raise HTTPException(status_code=404, detail="No data available")
 
-    timestamps = [int(ts.timestamp()) for ts in hist.index]
+    timestamps = []
+    for ts in hist.index:
+        if ts.tzinfo is None:
+            timestamps.append(int(ts.replace(tzinfo=None).timestamp()))
+        else:
+            timestamps.append(int(ts.tz_convert('UTC').timestamp()))
 
     return {
         'timestamps': timestamps,
@@ -206,6 +232,63 @@ async def websocket_quotes(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket)
+
+@app.websocket("/ws/candlesticks")
+async def websocket_candlesticks(websocket: WebSocket):
+    """WebSocket pour streaming de candlesticks en temps réel"""
+    await manager.connect_candlestick(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
+            
+            action = message.get('action')
+            symbols = message.get('symbols', [])
+            
+            if action == 'subscribe':
+                for symbol in symbols:
+                    manager.subscribe_candlestick(websocket, symbol)
+            elif action == 'unsubscribe':
+                for symbol in symbols:
+                    manager.unsubscribe_candlestick(websocket, symbol)
+            
+            for sub_symbol in manager.candlestick_subscriptions.get(websocket, set()):
+                try:
+                    ticker = yf.Ticker(sub_symbol)
+                    hist = ticker.history(period="1d", interval="5m")
+                    
+                    if not hist.empty:
+                        last_row = hist.iloc[-1]
+                        last_index = hist.index[-1]
+                        if last_index.tzinfo is None:
+                            last_timestamp = int(last_index.replace(tzinfo=None).timestamp())
+                        else:
+                            last_timestamp = int(last_index.tz_convert('UTC').timestamp())
+                        
+                        candlestick_data = {
+                            'type': 'candlestick_update',
+                            'symbol': sub_symbol,
+                            'time': last_timestamp,
+                            'open': float(last_row['Open']),
+                            'high': float(last_row['High']),
+                            'low': float(last_row['Low']),
+                            'close': float(last_row['Close']),
+                            'volume': int(last_row.get('Volume', 0)),
+                            'timestamp': asyncio.get_event_loop().time()
+                        }
+                        
+                        await websocket.send_json(candlestick_data)
+                except Exception as e:
+                    print(f"Error fetching candlestick for {sub_symbol}: {e}")
+            
+            await asyncio.sleep(2)
+            
+    except WebSocketDisconnect:
+        manager.disconnect_candlestick(websocket)
+    except Exception as e:
+        print(f"WebSocket candlestick error: {e}")
+        manager.disconnect_candlestick(websocket)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8001)
