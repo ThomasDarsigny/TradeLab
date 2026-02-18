@@ -31,13 +31,14 @@
 	const totalGain = $derived(totalCurrent - totalInvested);
 
 	const gainForLifetime = $derived.by(() => {
-		if (!account || !transactions) return 0;
-		
+		if (!transactions) return 0;
+
 		return transactions.reduce((total, tx) => {
-			if (tx.type === 'sell') return total + tx.amount;
-			if (tx.type === 'buy') return total - tx.amount;
-			if (tx.type === 'deposit') return total - tx.amount;
-			if (tx.type === 'withdrawal') return total + tx.amount;
+			if (tx.type === 'sell') {
+				const profitLoss = Number(tx.metadata?.profit_loss);
+				return Number.isFinite(profitLoss) ? total + profitLoss : total;
+			}
+			if (tx.type === 'dividend') return total + tx.amount;
 			return total;
 		}, 0);
 	});
@@ -124,6 +125,22 @@
 		}
 	}
 
+	async function updateTransactionsData() {
+		try {
+			const transactionsRes = await fetch('/api/account/transactions?limit=100', {
+				credentials: 'include'
+			});
+
+			if (transactionsRes.ok) {
+				const data = await transactionsRes.json();
+				if (data.transactions) {
+					transactions = data.transactions || [];
+				}
+			}
+		} catch (err) {
+		}
+	}
+
 	onMount(() => {
 		loadPortfolio();
 		
@@ -134,10 +151,15 @@
 		const positionsInterval = setInterval(() => {
 			updatePositionsData();
 		}, 15000);
+
+		const transactionsInterval = setInterval(() => {
+			updateTransactionsData();
+		}, 10000);
 		
 		return () => {
 			clearInterval(accountInterval);
 			clearInterval(positionsInterval);
+			clearInterval(transactionsInterval);
 		};
 	});
 </script>
@@ -176,7 +198,7 @@
 				<span>Valeur des positions</span>
 				<strong>${currency.format(totalCurrent)}</strong>
 			</div>
-			<div class="summary-card" class:positive={totalGain >= 0} class:negative={totalGain < 0}>
+			<div class="summary-card gain-loss-card" class:positive={gainForLifetime >= 0} class:negative={gainForLifetime < 0}>
 				<span>Gain / Perte</span>
 				<strong>{gainForLifetime >= 0 ? '+' : ''}${currency.format(gainForLifetime)}</strong>
 			</div>
@@ -304,6 +326,14 @@
 	.summary-card strong {
 		color: var(--text-primary);
 		font-size: 1.4rem;
+	}
+
+	.gain-loss-card.positive strong {
+		color: var(--accent-green);
+	}
+
+	.gain-loss-card.negative strong {
+		color: var(--accent-red);
 	}
 
 	.charts-section {

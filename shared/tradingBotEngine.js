@@ -1,27 +1,44 @@
 /**
- * tradingBotEngine.js
- * -------------------
- * Moteur partagé d'analyse technique utilisé par :
- * - l'API serveur (`/api/trading-bot/signal`) pour des analyses à la demande
- * - le worker `TradingBot/bot.js` qui exécute des scans en tâche de fond
- *
- * Objectif : fournir un ensemble d'indicateurs et une fonction `analyzeTradingBotSignal`
- * qui synthétise l'état du marché et propose un plan d'entrée/sortie (risk/exit).
- *
- * Conventions :
- * - Les séries de chandelles sont fournies via l'objet `CandleSeries` (high, low, close, volume).
- * - La fonction exportée retourne un objet `TradingBotSignal` décrivant :
- *   regime, indicateurs calculés, paramètres de risque (positionSize, stopLoss) et exitPlan.
- *
- * Sécurité et usage : ce moteur produit des signaux d'analyse technique seulement.
- * Il ne passe pas d'ordres. La logique d'exécution (gestion de compte, insertion en DB)
- * doit être gérée par le worker qui utilise ce module.
- *
- * Exemple d'utilisation :
- * import { analyzeTradingBotSignal } from '$shared/tradingBotEngine.js';
- * const signal = analyzeTradingBotSignal('AAPL', candles, 10000, 0.01);
+ * Moyenne mobile exponentielle (EMA)
+ * @param {number[]} values
+ * @param {number} period
+ * @returns {(number|undefined)[]}
  */
+const ema = (values, period) => {
+    const result = Array(values.length).fill(undefined);
+    if (values.length < period) return result;
+    let sum = 0;
+    for (let i = 0; i < period; i++) {
+        sum += values[i];
+    }
+    let prevEma = sum / period;
+    result[period - 1] = prevEma;
+    const k = 2 / (period + 1);
+    for (let i = period; i < values.length; i++) {
+        prevEma = values[i] * k + prevEma * (1 - k);
+        result[i] = prevEma;
+    }
+    return result;
+};
 
+/**
+ * Moyenne mobile simple (SMA)
+ * @param {number[]} values
+ * @param {number} period
+ * @returns {(number|undefined)[]}
+ */
+const sma = (values, period) => {
+    const result = Array(values.length).fill(undefined);
+    if (values.length < period) return result;
+    for (let i = period - 1; i < values.length; i++) {
+        let sum = 0;
+        for (let j = i - period + 1; j <= i; j++) {
+            sum += values[j];
+        }
+        result[i] = sum / period;
+    }
+    return result;
+};
 /**
  * @typedef {{ high: number[], low: number[], close: number[], volume: number[] }} CandleSeries
  */
@@ -80,47 +97,7 @@ const lastValue = (values) => {
     return undefined;
 };
 
-/**
- * @param {number[]} values
- * @param {number} period
- * @returns {(number|undefined)[]}
- */
-const sma = (values, period) => {
-    const result = Array(values.length).fill(undefined);
-    let sum = 0;
-    for (let i = 0; i < values.length; i += 1) {
-        sum += values[i];
-        if (i >= period) {
-            sum -= values[i - period];
-        }
-        if (i >= period - 1) {
-            result[i] = sum / period;
-        }
-    }
-    return result;
-};
-
-/**
- * @param {number[]} values
- * @param {number} period
- * @returns {(number|undefined)[]}
- */
-const ema = (values, period) => {
-    const result = Array(values.length).fill(undefined);
-    if (values.length < period) return result;
-
-    const multiplier = 2 / (period + 1);
-    let prevEma = values.slice(0, period).reduce((sum, value) => sum + value, 0) / period;
-    result[period - 1] = prevEma;
-
-    for (let i = period; i < values.length; i += 1) {
-        prevEma = (values[i] - prevEma) * multiplier + prevEma;
-        result[i] = prevEma;
-    }
-
-    return result;
-};
-
+// (supprimé : doublon de stc)
 /**
  * @param {number[]} values
  * @param {number} period
@@ -313,74 +290,61 @@ const donchian = (high, low, period) => {
 };
 
 /**
- * Calcule le Schaff Trend Cycle (STC)
- * Indicateur qui combine MACD et Stochastique pour identifier les tendances
  * @param {number[]} close
- * @param {number} fastPeriod - Généralement 5
- * @param {number} slowPeriod - Généralement 23
  * @returns {(number|undefined)[]}
  */
-const stc = (close, fastPeriod = 5, slowPeriod = 23) => {
+const stc = (close) => {
     const result = Array(close.length).fill(undefined);
-
-    // Calcul du MACD
-    const ema12 = ema(close, 12);
-    const ema26 = ema(close, 26);
-    const macdLine = [];
+    
+    const rsiResult = rsi(close, 14);
+    if (rsiResult.every(v => v === undefined)) return result;
+    
+    const rsiEmaFast = ema(rsiResult.map(v => v ?? 0), 5);
+    const rsiEmaSlow = ema(rsiResult.map(v => v ?? 0), 34);
+    
+    const stochRsi = Array(close.length).fill(undefined);
     for (let i = 0; i < close.length; i += 1) {
-        if (ema12[i] !== undefined && ema26[i] !== undefined) {
-            macdLine.push(ema12[i] - ema26[i]);
+        const rsiVal = rsiResult[i];
+        const fastVal = rsiEmaFast[i];
+        const slowVal = rsiEmaSlow[i];
+        
+        if (rsiVal === undefined || fastVal === undefined || slowVal === undefined) continue;
+        
+        const denominator = fastVal - slowVal;
+        if (Math.abs(denominator) < 0.001) {
+            stochRsi[i] = 50; 
         } else {
-            macdLine.push(undefined);
+            stochRsi[i] = ((rsiVal - slowVal) / denominator) * 100;
+            stochRsi[i] = Math.max(0, Math.min(100, stochRsi[i]));
         }
     }
-
-    // Calcul du MACD Signal (EMA du MACD)
-    const macdSignal = ema(macdLine.map((v) => v ?? 0), 9);
-
-    // Histogram = MACD - Signal
-    const histogram = [];
-    for (let i = 0; i < macdLine.length; i += 1) {
-        if (macdLine[i] !== undefined && macdSignal[i] !== undefined) {
-            histogram.push(macdLine[i] - macdSignal[i]);
-        } else {
-            histogram.push(undefined);
+    
+    const stcFinal = rsi(stochRsi.map(v => v ?? 0), 3);
+    
+    for (let i = 0; i < stcFinal.length; i += 1) {
+        if (stcFinal[i] !== undefined) {
+            result[i] = stcFinal[i];
         }
     }
-
-    // Calcul du Stochastique du Histogram
-    const fastKValues = [];
-    const fastDValues = [];
-
-    for (let i = fastPeriod - 1; i < histogram.length; i += 1) {
-        const slice = histogram.slice(i - fastPeriod + 1, i + 1).filter((v) => v !== undefined);
-        if (slice.length === 0) {
-            fastKValues.push(undefined);
-            continue;
-        }
-        const high = Math.max(...slice);
-        const low = Math.min(...slice);
-        const current = histogram[i] ?? 0;
-        const fastK = high === low ? 50 : 100 * ((current - low) / (high - low));
-        fastKValues.push(fastK);
-    }
-
-    // Lissage avec SMA pour obtenir Stochastique K lissé
-    const smoothedK = sma(fastKValues, 3);
-
-    // STC = normalisation finale avec une autre SMA
-    const stcRaw = sma(smoothedK, 3);
-
-    // Remplir le résultat
-    const offset = fastPeriod - 1;
-    for (let i = 0; i < stcRaw.length; i += 1) {
-        if (stcRaw[i] !== undefined) {
-            result[i + offset] = Math.max(0, Math.min(100, stcRaw[i]));
-        }
-    }
-
+    
     return result;
 };
+
+
+/**
+ * Calcule le multiplicateur ATR dynamique selon le type d'actif
+ * @param {string} symbol
+ * @returns {number}
+ */
+function getAtrMultiplier(symbol) {
+    const isCrypto = symbol.toUpperCase().includes('-USD') || 
+                     symbol.toUpperCase().includes('-BTC') || 
+                     symbol.toUpperCase().includes('-USDT') ||
+                     symbol.toUpperCase().includes('ETH') ||
+                     symbol.toUpperCase().includes('BTC');
+    
+    return isCrypto ? 3.5 : 2.5;
+}
 
 /**
  * @param {string} symbol
@@ -396,6 +360,40 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
     const periodBollinger = 20;
     const periodDonchian = 20;
     const periodVolume = 20;
+    const periodSma = 20;
+
+    const minDataPoints = 50; 
+    if (!candles.close || candles.close.length < minDataPoints) {
+        return {
+            symbol,
+            regime: 'neutral',
+            breakoutVigilance: false,
+            indicators: {
+                adx: undefined,
+                atr: undefined,
+                ema50: undefined,
+                ema200: undefined,
+                rsi: undefined,
+                sma20: undefined,
+                stc: undefined,
+                bollingerUpper: undefined,
+                bollingerLower: undefined,
+                donchianUpper: undefined,
+                donchianLower: undefined,
+                volumeAvg: undefined,
+                lastVolume: undefined,
+            },
+            risk: {
+                entryPrice: undefined,
+                stopLoss: undefined,
+                riskPercent: 0,
+                positionSize: undefined
+            },
+            exitPlan: {
+                mode: 'none'
+            }
+        };
+    }
 
     const ema50Series = ema(candles.close, 50);
     const ema200Series = ema(candles.close, 200);
@@ -404,9 +402,11 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
     const adxSeries = adx(candles.high, candles.low, candles.close, periodAdx);
     const bollingerSeries = bollinger(candles.close, periodBollinger, 2);
     const donchianSeries = donchian(candles.high, candles.low, periodDonchian);
+    const sma20Series = sma(candles.close, periodSma);
+    const stcSeries = stc(candles.close);
 
     const lastClose = candles.close[candles.close.length - 1];
-    const lastVolume = candles.volume[candles.volume.length - 1];
+    const lastVolume = candles.volume ? candles.volume[candles.volume.length - 1] : 0;
 
     const avgVolumeSlice = candles.volume.slice(Math.max(0, candles.volume.length - periodVolume));
     const volumeAvg = avgVolumeSlice.length
@@ -418,6 +418,13 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
     const ema50Value = lastValue(ema50Series);
     const ema200Value = lastValue(ema200Series);
     const rsiValue = lastValue(rsiSeries);
+    const sma20Value = lastValue(sma20Series);
+    let stcValue = lastValue(stcSeries);
+    
+    if (stcValue === undefined) {
+        stcValue = rsiValue;
+    }
+    
     const bollingerUpper = lastValue(bollingerSeries.upper);
     const bollingerLower = lastValue(bollingerSeries.lower);
     const donchianUpper = lastValue(donchianSeries.upper);
@@ -436,8 +443,9 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
             : false;
 
     const entryPrice = safeNumber(lastClose);
+    const atrMultiplier = getAtrMultiplier(symbol);
     const stopLoss = entryPrice !== undefined && atrValue !== undefined
-        ? entryPrice - 2 * atrValue
+        ? entryPrice - atrMultiplier * atrValue
         : undefined;
 
     const safeRiskPercent = Number.isFinite(riskPercent) ? riskPercent : 0.01;
@@ -461,7 +469,7 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
         const highSlice = candles.high.slice(Math.max(0, candles.high.length - periodDonchian));
         highestHigh = highSlice.length ? Math.max(...highSlice) : undefined;
         if (highestHigh !== undefined) {
-            trailingStop = highestHigh - 2 * atrValue;
+            trailingStop = highestHigh - atrMultiplier * atrValue;
         }
     }
 
@@ -475,6 +483,8 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
             ema50: ema50Value,
             ema200: ema200Value,
             rsi: rsiValue,
+            sma20: sma20Value,
+            stc: stcValue,
             bollingerUpper,
             bollingerLower,
             donchianUpper,
@@ -495,4 +505,114 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
             highestHigh
         }
     };
+}
+
+/**
+ * Prend une décision ferme d'achat/vente basée sur les signaux et une position ouverte
+ * @param {any} signal 
+ * @param {any|null} position
+ * @returns {{action: 'BUY'|'SELL'|'HOLD', reason?: string, strategy?: string, price?: number, stopLoss?: number}}
+ */
+export function makeDecision(signal, position) {
+    if (!signal || typeof signal !== 'object') return { action: 'HOLD', reason: 'No signal' };
+    const lastClose = signal.risk && typeof signal.risk === 'object' ? signal.risk.entryPrice : undefined;
+    const indicators = signal.indicators && typeof signal.indicators === 'object' ? signal.indicators : {};
+    const exitPlan = signal.exitPlan && typeof signal.exitPlan === 'object' ? signal.exitPlan : {};
+    // Ajout du STC hook (besoin de la valeur précédente)
+    const stcCurrent = indicators.stc;
+    const stcPrev = indicators.stcPrev;
+
+    if (!lastClose) {
+        return { action: 'HOLD', reason: 'No price data' };
+    }
+
+    // ===== LOGIQUE DE SORTIE (Si position ouverte) =====
+    if (position && typeof position === 'object') {
+        const entryPrice = Number(position.entry_price);
+        const rawPnlPercent = (lastClose - entryPrice) / entryPrice;
+
+        // 1. HARD STOP-LOSS (-5%) : Priorité absolue
+        if (rawPnlPercent < -0.05) {
+            return { action: 'SELL', reason: 'STOP_LOSS_HARD', price: lastClose };
+        }
+
+        if (rawPnlPercent > 0.10) {
+            return { action: 'SELL', reason: 'TAKE_PROFIT', price: lastClose };
+        }
+
+        const isInProfitZone = rawPnlPercent > 0.008;
+
+        if (isInProfitZone && stcPrev !== undefined && stcCurrent !== undefined && stcPrev > 85 && stcCurrent < 82) {
+            return { action: 'SELL', reason: 'STC_REVERSAL_TOP', price: lastClose };
+        }
+
+        if (isInProfitZone && exitPlan.mode === 'ema' && exitPlan.emaExitBelow !== undefined) {
+            if (lastClose < exitPlan.emaExitBelow) {
+                return { action: 'SELL', reason: 'EMA50_BREACH', price: lastClose };
+            }
+        }
+
+        if (isInProfitZone && exitPlan.mode === 'atr' && exitPlan.trailingStop !== undefined) {
+            if (lastClose < exitPlan.trailingStop) {
+                return { action: 'SELL', reason: 'ATR_TRAILING_STOP', price: lastClose };
+            }
+        }
+
+        if (isInProfitZone && indicators.sma20 !== undefined && lastClose < indicators.sma20 * 0.90) {
+            return { action: 'SELL', reason: 'SMA20_BREAK', price: lastClose };
+        }
+
+        return { action: 'HOLD' };
+    }
+
+    // ===== LOGIQUE D'ENTRÉE (Pas de position ouverte) =====
+    const adx = indicators.adx;
+    const ema50 = indicators.ema50;
+    const ema200 = indicators.ema200;
+    const sma20 = indicators.sma20;
+    const rsi = indicators.rsi;
+    const atr = indicators.atr;
+
+    if (adx !== undefined && adx > 25 &&
+        ema50 !== undefined && ema200 !== undefined && ema50 > ema200 &&
+        sma20 !== undefined && lastClose > sma20) {
+        const stopLoss = atr !== undefined ? lastClose - (atr * 3) : lastClose * 0.95;
+        return {
+            action: 'BUY',
+            strategy: 'TREND',
+            price: lastClose,
+            stopLoss,
+            reason: 'ADX_TREND_EMA_ALIGNED'
+        };
+    }
+
+    if (adx !== undefined && adx < 20 &&
+        rsi !== undefined && rsi < 40 &&
+        ema50 !== undefined && lastClose > ema50) {
+        const stopLoss = atr !== undefined ? lastClose - (atr * 2.5) : lastClose * 0.93;
+        return {
+            action: 'BUY',
+            strategy: 'RANGE_REVERSAL',
+            price: lastClose,
+            stopLoss,
+            reason: 'RSI_OVERSOLD_RANGE'
+        };
+    }
+
+    if (signal && signal.breakoutVigilance &&
+        indicators.donchianUpper !== undefined &&
+        lastClose >= indicators.donchianUpper * 0.99 &&
+        indicators.stc !== undefined &&
+        indicators.stc > 60) {
+        const stopLoss = atr !== undefined ? lastClose - (atr * 2) : lastClose * 0.94;
+        return {
+            action: 'BUY',
+            strategy: 'BREAKOUT',
+            price: lastClose,
+            stopLoss,
+            reason: 'DONCHIAN_BREAKOUT_HIGH_VOLUME'
+        };
+    }
+
+    return { action: 'HOLD' };
 }

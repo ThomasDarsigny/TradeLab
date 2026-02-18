@@ -29,6 +29,7 @@
 	let botActions = $state<BotAction[]>([]);
 	let botPanelOpen = $state(true);
 	let botSubscription = $state<any>(null);
+	let botActionsInterval: ReturnType<typeof setInterval> | null = null;
 
 	type BotAction = {
 		id: string;
@@ -111,6 +112,20 @@
 			});
 	};
 
+	const startBotActionsPolling = (userId: string) => {
+		if (botActionsInterval) return;
+		botActionsInterval = setInterval(() => {
+			loadBotActions(userId);
+		}, 10000);
+	};
+
+	const stopBotActionsPolling = () => {
+		if (botActionsInterval) {
+			clearInterval(botActionsInterval);
+			botActionsInterval = null;
+		}
+	};
+
 	onMount(() => {
 		const refreshUser = async () => {
 			const { data: { user } } = await supabase.auth.getUser();
@@ -120,10 +135,12 @@
 				await loadTradingBotSetting();
 				await loadBotActions(user.id);
 				subscribeBotActions(user.id);
+				startBotActionsPolling(user.id);
 			} else if (botSubscription) {
 				supabase.removeChannel(botSubscription);
 				botSubscription = null;
 				botActions = [];
+				stopBotActionsPolling();
 			}
 			if (!user && !$page.url.pathname.startsWith('/auth') && $page.url.pathname !== '/login') {
 				goto('/login');
@@ -175,6 +192,7 @@
 				supabase.removeChannel(botSubscription);
 				botSubscription = null;
 			}
+			stopBotActionsPolling();
 		};
 	});
 
@@ -193,6 +211,7 @@
 			supabase.removeChannel(botSubscription);
 			botSubscription = null;
 		}
+		stopBotActionsPolling();
 		userEmail = null;
 		currentUserId = null;
 		clearAccount();
