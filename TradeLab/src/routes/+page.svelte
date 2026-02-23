@@ -26,6 +26,11 @@
 		maximumFractionDigits: 2,
 	});
 
+	const currencyCompact = new Intl.NumberFormat("fr-FR", {
+		notation: "compact",
+		maximumFractionDigits: 1,
+	});
+
 	const totalInvested = $derived(
 		positions.reduce((sum, pos) => sum + pos.quantity * pos.entry_price, 0),
 	);
@@ -277,15 +282,15 @@
 
 		const accountInterval = setInterval(() => {
 			updateAccountData();
-		}, 5000);
+		}, 30000);
 
 		const positionsInterval = setInterval(() => {
 			updatePositionsData();
-		}, 15000);
+		}, 30000);
 
 		const transactionsInterval = setInterval(() => {
 			updateTransactionsData();
-		}, 10000);
+		}, 30000);
 
 		return () => {
 			stopPortfolioRealtime();
@@ -371,6 +376,8 @@
 			const borderPrimary =
 				colors.getPropertyValue("--border-primary").trim() ||
 				"rgba(0, 0, 0, 0.1)";
+			const bgCard =
+				colors.getPropertyValue("--bg-secondary").trim() || "#0f172a";
 			(window as any).balanceChartInstance = new ChartJS(ctx, {
 				type: "line",
 				data: {
@@ -380,30 +387,41 @@
 							label: "Solde total",
 							data: balanceHistory.map((h) => h.balance),
 							borderColor: accentPrimary,
-							backgroundColor: "rgba(59, 130, 246, 0.1)",
-							borderWidth: 2,
+							backgroundColor: "rgba(59, 130, 246, 0.14)",
+							borderWidth: 3,
 							fill: true,
-							tension: 0.4,
-							pointRadius: 4,
+							tension: 0.25,
+							pointRadius: 2,
+							pointHoverRadius: 5,
 							pointBackgroundColor: accentPrimary,
 							pointBorderColor: "#fff",
-							pointBorderWidth: 2,
+							pointBorderWidth: 1,
 						},
 					],
 				},
 				options: {
 					responsive: true,
-					maintainAspectRatio: true,
+					maintainAspectRatio: false,
+					interaction: {
+						intersect: false,
+						mode: "index",
+					},
 					plugins: {
 						legend: {
 							display: true,
 							labels: {
 								color: textPrimary,
 								usePointStyle: true,
-								padding: 15,
+								padding: 12,
+								boxWidth: 10,
 							},
 						},
 						tooltip: {
+							backgroundColor: bgCard,
+							borderColor: borderPrimary,
+							borderWidth: 1,
+							titleColor: textPrimary,
+							bodyColor: textPrimary,
 							callbacks: {
 								label: (context) => {
 									return `$${Number(context.raw).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}`;
@@ -416,7 +434,8 @@
 							ticks: {
 								color: textPrimary,
 								callback: (value) =>
-									`$${Number(value).toLocaleString("fr-FR", { maximumFractionDigits: 0 })}`,
+									`$${currencyCompact.format(Number(value))}`,
+								maxTicksLimit: 6,
 							},
 							grid: {
 								color: borderPrimary,
@@ -425,9 +444,12 @@
 						x: {
 							ticks: {
 								color: textPrimary,
+								autoSkip: true,
+								maxTicksLimit: 8,
 							},
 							grid: {
 								color: borderPrimary,
+								display: false,
 							},
 						},
 					},
@@ -594,7 +616,7 @@
 				<p class="chart-info">
 					Évolution du solde total de votre compte au fil du temps
 				</p>
-				<canvas id="balance-chart" style="max-height: 400px;"></canvas>
+				<canvas id="balance-chart" style="height: 380px; max-height: 400px;"></canvas>
 			</div>
 		</div>
 	</div>

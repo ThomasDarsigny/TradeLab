@@ -94,7 +94,10 @@ export async function deposit(accountId: string, amount: number, description = '
     await addTransaction(accountId, 'deposit', amount, description, undefined, client);
 
     const newBalance = Number(account.current_balance) + amount;
-    return updateBalance(accountId, newBalance, client);
+    const newAvailable = Number(account.available_balance) + amount;
+
+    await updateBalance(accountId, newBalance, client);
+    return updateAvailableBalance(accountId, newAvailable, client);
 }
 
 /**

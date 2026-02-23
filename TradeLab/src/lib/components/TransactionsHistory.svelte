@@ -52,11 +52,6 @@
 			<h3>Historique des transactions</h3>
 			<p>Dernieres operations enregistrees sur le compte</p>
 		</div>
-		{#if transactions.length > 5}
-			<button class="toggle-btn" onclick={() => (expandAll = !expandAll)}>
-				{expandAll ? 'Voir moins' : 'Voir plus'}
-			</button>
-		{/if}
 	</div>
 
 	{#if sortedTransactions.length === 0}
@@ -81,6 +76,14 @@
 					</span>
 				</div>
 			{/each}
+		</div>
+	{/if}
+
+	{#if transactions.length > 5}
+		<div class="history-footer">
+			<button class="toggle-btn" onclick={() => (expandAll = !expandAll)}>
+				{expandAll ? 'Voir moins' : 'Voir plus'}
+			</button>
 		</div>
 	{/if}
 </div>
@@ -131,6 +134,12 @@
 		background: var(--accent-hover);
 		transform: translateY(-2px);
 		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+	}
+
+	.history-footer {
+		display: flex;
+		justify-content: center;
+		margin-top: 1rem;
 	}
 
 	.history-table {

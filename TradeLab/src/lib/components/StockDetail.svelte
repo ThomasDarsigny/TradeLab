@@ -148,6 +148,39 @@
 		}
 	});
 
+	function applyIndicatorVisibility() {
+		if (chartType === 'candles') {
+			candleSeries?.applyOptions({ visible: true });
+			smaSeries?.applyOptions({ visible: showSMA });
+			emaSeries?.applyOptions({ visible: showEMA });
+			lineSeries?.applyOptions({ visible: false });
+			return;
+		}
+
+		candleSeries?.applyOptions({ visible: false });
+		smaSeries?.applyOptions({ visible: false });
+		emaSeries?.applyOptions({ visible: false });
+		lineSeries?.applyOptions({ visible: true });
+	}
+
+	function toggleSMA() {
+		if (chartType === 'line') {
+			chartType = 'candles';
+		}
+
+		showSMA = !showSMA;
+		applyIndicatorVisibility();
+	}
+
+	function toggleEMA() {
+		if (chartType === 'line') {
+			chartType = 'candles';
+		}
+
+		showEMA = !showEMA;
+		applyIndicatorVisibility();
+	}
+
 	function startAutoRefresh() {
 		stopAutoRefresh();
 		refreshActive = true;
@@ -284,14 +317,22 @@
 			close: Number(data.close)
 		};
 
-		if (candleSeries && timestamp > lastCandleTime) {
-			console.log('🔥 Envoi au graphique ->', data.close);
-			candleSeries.update(candleData);
-			lineSeries?.update({ time: timestamp, value: candleData.close });
-			stockData.price = candleData.close;
-			lastCandleTime = timestamp;
-			chart?.timeScale().scrollToRealTime();
+		if (!candleSeries) {
+			return;
 		}
+
+		if (timestamp < lastCandleTime) {
+			return;
+		}
+
+		console.log('🔥 Envoi live au graphique ->', data.close);
+		candleSeries.update(candleData);
+		lineSeries?.update({ time: timestamp, value: candleData.close });
+		stockData.price = candleData.close;
+		if (timestamp > lastCandleTime) {
+			lastCandleTime = timestamp;
+		}
+		chart?.timeScale().scrollToRealTime();
 	}
 
 	function initChart() {
@@ -368,6 +409,8 @@
 			smaSeries.applyOptions({ visible: showSMA });
 			emaSeries.applyOptions({ visible: showEMA });
 		}
+
+		applyIndicatorVisibility();
 
 		resizeObserver = new ResizeObserver((entries) => {
 			for (const entry of entries) {
@@ -576,17 +619,17 @@
 						<div class="indicators-selector">
 							<button
 								class="period-btn {showSMA ? 'active' : ''}"
-								onclick={() => showSMA = !showSMA}
+								onclick={toggleSMA}
 								title="Moyenne Mobile Simple (SMA)"
-								disabled={chartLoading || chartType === 'line'}
+								disabled={chartLoading}
 							>
 								SMA {smaPeriod}
 							</button>
 							<button
 								class="ema-btn {showEMA ? 'active' : ''}"
-								onclick={() => showEMA = !showEMA}
+								onclick={toggleEMA}
 								title="Moyenne Mobile Exponentielle (EMA)"
-								disabled={chartLoading || chartType === 'line'}
+								disabled={chartLoading}
 							>
 								EMA {emaPeriod}
 							</button>
