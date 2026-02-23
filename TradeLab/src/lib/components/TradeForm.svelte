@@ -154,6 +154,7 @@
 			if (accountResponse.ok) {
 				const accountData = await accountResponse.json();
 				setAccount(accountData.account);
+				window.dispatchEvent(new CustomEvent('account-updated'));
 			}
 
 			setTimeout(() => {

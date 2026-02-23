@@ -3,6 +3,7 @@
 	import type { Account, Position, Transaction } from "$lib/types/account";
 	import PortfolioCharts from "$lib/components/PortfolioCharts.svelte";
 	import TransactionsHistory from "$lib/components/TransactionsHistory.svelte";
+	import { supabase } from "$lib/supabaseClient";
 
 	let account = $state<Account | null>(null);
 	let positions = $state<Position[]>([]);
@@ -10,6 +11,8 @@
 	let loading = $state(true);
 	let error = $state("");
 	let showBalanceChart = $state(false);
+	let portfolioRealtimeChannel: any = null;
+	let realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
@@ -79,6 +82,9 @@
 
 			const accountData = await accountRes.json();
 			account = accountData.account;
+			if (account?.id) {
+				subscribePortfolioRealtime(account.id);
+			}
 
 			if (positionsRes.ok) {
 				const data = await positionsRes.json();
@@ -97,6 +103,92 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	function stopPortfolioRealtime() {
+		if (realtimeRetryTimer) {
+			clearTimeout(realtimeRetryTimer);
+			realtimeRetryTimer = null;
+		}
+
+		if (portfolioRealtimeChannel) {
+			supabase.removeChannel(portfolioRealtimeChannel);
+			portfolioRealtimeChannel = null;
+		}
+	}
+
+	function subscribePortfolioRealtime(accountId: string) {
+		if (!accountId) return;
+
+		if (realtimeRetryTimer) {
+			clearTimeout(realtimeRetryTimer);
+			realtimeRetryTimer = null;
+		}
+
+		if (portfolioRealtimeChannel) {
+			supabase.removeChannel(portfolioRealtimeChannel);
+			portfolioRealtimeChannel = null;
+		}
+
+		portfolioRealtimeChannel = supabase
+			.channel(`portfolio-live-${accountId}`)
+			.on(
+				"postgres_changes",
+				{
+					event: "UPDATE",
+					schema: "public",
+					table: "accounts",
+					filter: `id=eq.${accountId}`,
+				},
+				() => {
+					void updateAccountData();
+				},
+			)
+			.on(
+				"postgres_changes",
+				{
+					event: "*",
+					schema: "public",
+					table: "positions",
+					filter: `account_id=eq.${accountId}`,
+				},
+				() => {
+					void updatePositionsData();
+					void updateAccountData();
+				},
+			)
+			.on(
+				"postgres_changes",
+				{
+					event: "*",
+					schema: "public",
+					table: "transactions",
+					filter: `account_id=eq.${accountId}`,
+				},
+				() => {
+					void updateTransactionsData();
+					void updateAccountData();
+				},
+			)
+			.subscribe((status: string) => {
+				if (status === "SUBSCRIBED") {
+					void updateAccountData();
+					void updatePositionsData();
+					void updateTransactionsData();
+					return;
+				}
+
+				if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+					if (realtimeRetryTimer || account?.id !== accountId) return;
+
+					realtimeRetryTimer = setTimeout(() => {
+						realtimeRetryTimer = null;
+						if (account?.id === accountId) {
+							subscribePortfolioRealtime(accountId);
+						}
+					}, 1000);
+				}
+			});
 	}
 
 	async function updateAccountData() {
@@ -175,6 +267,14 @@
 	onMount(() => {
 		loadPortfolio();
 
+		const handleAccountUpdated = () => {
+			void updateAccountData();
+			void updatePositionsData();
+			void updateTransactionsData();
+		};
+
+		window.addEventListener("account-updated", handleAccountUpdated);
+
 		const accountInterval = setInterval(() => {
 			updateAccountData();
 		}, 5000);
@@ -188,6 +288,8 @@
 		}, 10000);
 
 		return () => {
+			stopPortfolioRealtime();
+			window.removeEventListener("account-updated", handleAccountUpdated);
 			clearInterval(accountInterval);
 			clearInterval(positionsInterval);
 			clearInterval(transactionsInterval);

@@ -31,6 +31,7 @@ import { page } from '$app/stores';
 	let botPanelOpen = $state(true);
 	let botSubscription = $state<any>(null);
 	let botActionsInterval: ReturnType<typeof setInterval> | null = null;
+	let botSubscriptionRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	type BotAction = {
 		id: string;
@@ -88,6 +89,11 @@ import { page } from '$app/stores';
 	};
 
 	const subscribeBotActions = (userId: string) => {
+		if (botSubscriptionRetryTimer) {
+			clearTimeout(botSubscriptionRetryTimer);
+			botSubscriptionRetryTimer = null;
+		}
+
 		if (botSubscription) {
 			supabase.removeChannel(botSubscription);
 			botSubscription = null;
@@ -104,12 +110,30 @@ import { page } from '$app/stores';
 					filter: `user_id=eq.${userId}`
 				},
 				(payload: RealtimePostgresInsertPayload<BotAction>) => {
-					const action = payload.new;
-					botActions = [action, ...botActions].slice(0, 50);
+					const action = payload.new as BotAction;
+					botActions = [action, ...botActions.filter((entry) => entry.id !== action.id)].slice(0, 50);
+					void loadBotActions(userId);
 				}
 			)
 			.subscribe((status: string) => {
 				console.log(`[Bot Actions] Subscription status: ${status}`);
+				if (status === 'SUBSCRIBED') {
+					void loadBotActions(userId);
+					return;
+				}
+
+				if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+					if (botSubscriptionRetryTimer || currentUserId !== userId) {
+						return;
+					}
+
+					botSubscriptionRetryTimer = setTimeout(() => {
+						botSubscriptionRetryTimer = null;
+						if (currentUserId === userId) {
+							subscribeBotActions(userId);
+						}
+					}, 1000);
+				}
 			});
 	};
 
@@ -124,6 +148,10 @@ import { page } from '$app/stores';
 		if (botActionsInterval) {
 			clearInterval(botActionsInterval);
 			botActionsInterval = null;
+		}
+		if (botSubscriptionRetryTimer) {
+			clearTimeout(botSubscriptionRetryTimer);
+			botSubscriptionRetryTimer = null;
 		}
 	};
 
