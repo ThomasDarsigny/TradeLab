@@ -8,17 +8,6 @@ import { goto, invalidateAll } from '$app/navigation';
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
 
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
-onMount(() => {
-	const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-		if (event === 'SIGNED_OUT') {
-			goto('/login', { replaceState: true });
-		}
-	});
-
-	return () => subscription.unsubscribe();
-});
-
 	let { children } = $props();
 	let userEmail = $state<string | null>(null);
 	let showHeader = $derived(
@@ -174,12 +163,14 @@ onMount(() => {
 		refreshUser();
 		refreshAccount();
 
-		supabase.auth.onAuthStateChange(async (event: string) => {
-			await refreshUser();
-			await refreshAccount();
+		const {
+			data: { subscription: authSubscription }
+		} = supabase.auth.onAuthStateChange((event: string) => {
+			void refreshUser();
+			void refreshAccount();
 			if (event === 'SIGNED_OUT') {
-				await invalidateAll();
-				await goto('/login');
+				void invalidateAll();
+				void goto('/login', { replaceState: true });
 			}
 		});
 
@@ -198,6 +189,7 @@ onMount(() => {
 		}
 
 		return () => {
+			authSubscription.unsubscribe();
 			window.removeEventListener('focus', handleFocus);
 			document.removeEventListener('visibilitychange', handleFocus);
 			if (botSubscription) {
@@ -224,14 +216,25 @@ onMount(() => {
 			botSubscription = null;
 		}
 		stopBotActionsPolling();
+		try {
+			await fetch('/api/settings/trading-bot', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include',
+				body: JSON.stringify({ enabled: false, symbols: botSymbols || 'BTC-USD' })
+			});
+		} catch (error) {
+			console.error('Impossible de désactiver le bot à la déconnexion:', error);
+		}
 		userEmail = null;
 		currentUserId = null;
 		clearAccount();
 		localStorage.clear();
 		sessionStorage.clear();
 		await supabase.auth.signOut();
-		await new Promise(resolve => setTimeout(resolve, 500));
-		goto('/login', { replaceState: true });
+		window.location.replace('/login');
 	}
 
 	function toggleProfileMenu() {

@@ -1,6 +1,5 @@
 <script lang="ts">
     import { supabase } from '$lib/supabaseClient';
-    import { goto } from '$app/navigation';
 
     const { initialMode = 'login' } = $props<{ initialMode?: 'login' | 'signup' }>();
 
@@ -58,7 +57,17 @@
                 });
 
                 if (loginError) throw loginError;
-                await goto('/');
+
+                const {
+                    data: { session }
+                } = await supabase.auth.getSession();
+
+                if (!session) {
+                    throw new Error('Session non disponible après connexion. Veuillez réessayer.');
+                }
+
+                window.location.replace('/');
+                return;
             }
         } catch (err) {
             error = err instanceof Error ? err.message : 'Une erreur est survenue';
