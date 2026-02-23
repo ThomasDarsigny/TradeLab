@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TradeForm from './TradeForm.svelte';
-	import { onMount, onDestroy, untrack, tick } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import {
 		createChart,
 		CandlestickSeries,
@@ -90,8 +90,6 @@
 
 	onMount(async () => {
 		   if (symbol) {
-			   await tick();
-			   await loadChartData(selectedPeriod);
 			   if (!candlestickWs) {
 				   candlestickWs = getCandlestickWebSocket();
 				   await candlestickWs.connect();
@@ -128,14 +126,11 @@
 	});
 
 	$effect(() => {
-		if (symbol && selectedPeriod) {
-			untrack(() => {
-				void (async () => {
-					await tick();
-					await loadChartData(selectedPeriod);
-				})();
-			});
+		if (!symbol || !selectedPeriod || !chartContainer) {
+			return;
 		}
+
+		void loadChartData(selectedPeriod);
 	});
 
 
