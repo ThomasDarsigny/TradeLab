@@ -1,4 +1,4 @@
-<script lang="ts">
+<!-- <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { Account } from '$lib/types/account';
 	import { normalizeAccount, setAccount } from '$lib/stores/account';
@@ -34,16 +34,16 @@
 		<div class="loading">Chargement de vos données...</div>
 	{:else if account}
 		<div class="stats-grid">
-			<div class="stat-card">
+			<div class="stat-card" title="Solde disponible = Argent liquide disponible pour trader">
 				<div class="stat-label">Solde Disponible</div>
 				<div class="stat-value">${account.available_balance.toLocaleString()}</div>
-				<div class="stat-percent">Liquidités</div>
+				<div class="stat-percent">Capital liquide</div>
 			</div>
 
-			<div class="stat-card">
-				<div class="stat-label">Solde Total</div>
+			<div class="stat-card" title="Solde courant = Argent disponible + Valeur actuelle de vos positions">
+				<div class="stat-label">Solde Courant</div>
 				<div class="stat-value">${account.current_balance.toLocaleString()}</div>
-				<div class="stat-percent">Total</div>
+				<div class="stat-percent">Valeur totale</div>
 			</div>
 
 			<div class="stat-card">
@@ -78,4 +78,4 @@
 			<p>Aucun compte trouvé. Veuillez vous connecter ou créer un compte.</p>
 		</div>
 	{/if}
-</div>
+</div> -->

@@ -177,6 +177,20 @@ const openPosition = async (account, symbol, entryPrice, quantity, signal, strat
         return false;
     }
 
+    await supabase.from('transactions').insert({
+        account_id: account.id,
+        type: 'buy',
+        amount: totalCost + fees,
+        description: `Achat de ${quantity.toFixed(4)} ${symbol} via ${strategy} @ ${entryPrice.toFixed(2)}`,
+        metadata: {
+            symbol,
+            quantity,
+            price: entryPrice,
+            strategy,
+            fees
+        }
+    });
+
     await logBotAction(
         account.user_id,
         'buy',
@@ -207,7 +221,23 @@ const closePosition = async (account, position, exitPrice, signal, reason) => {
 
     const pnlValue = toNumber(data?.pnl ?? 0);
     const pnlPercent = ((pnlValue / (toNumber(position.quantity) * toNumber(position.entry_price))) * 100).toFixed(2);
+    const totalRevenue = toNumber(position.quantity) * exitPrice;
+    
     console.log(`[VENTE REUSSIE] ${position.symbol} @ ${exitPrice.toFixed(2)} | PnL: ${pnlValue.toFixed(2)}$ (${pnlPercent}%) | Raison: ${reason}`);
+
+    await supabase.from('transactions').insert({
+        account_id: account.id,
+        type: 'sell',
+        amount: totalRevenue - exitFees,
+        description: `Vente de ${toNumber(position.quantity).toFixed(4)} ${position.symbol} @ ${exitPrice.toFixed(2)} | Raison: ${reason}`,
+        metadata: {
+            symbol: position.symbol,
+            quantity: position.quantity,
+            price: exitPrice,
+            profitLoss: pnlValue,
+            reason
+        }
+    });
 
     await logBotAction(
         account.user_id,

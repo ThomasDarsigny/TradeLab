@@ -1,11 +1,23 @@
+
 <script lang="ts">
-	import './layout.css';
-	import { supabase } from '$lib/supabaseClient';
-	import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
-	import { setAccount, clearAccount } from '$lib/stores/account';
-	import { goto, invalidateAll } from '$app/navigation';
-	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+import './layout.css';
+import { supabase } from '$lib/supabaseClient';
+import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
+import { setAccount, clearAccount } from '$lib/stores/account';
+import { goto, invalidateAll } from '$app/navigation';
+import { onMount } from 'svelte';
+import { page } from '$app/stores';
+
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+onMount(() => {
+	const { data: { subscription } } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+		if (event === 'SIGNED_OUT') {
+			goto('/login', { replaceState: true });
+		}
+	});
+
+	return () => subscription.unsubscribe();
+});
 
 	let { children } = $props();
 	let userEmail = $state<string | null>(null);
@@ -116,7 +128,7 @@
 		if (botActionsInterval) return;
 		botActionsInterval = setInterval(() => {
 			loadBotActions(userId);
-		}, 10000);
+		}, 3000);
 	};
 
 	const stopBotActionsPolling = () => {

@@ -342,7 +342,8 @@ export async function getOpenPositions(accountId: string, client?: SupabaseClien
         .from('positions')
         .select('*')
         .eq('account_id', accountId)
-        .eq('status', 'open');
+        .eq('status', 'open')
+        .gt('quantity', 0);
 
     if (error) throw error;
     return data as Position[];
@@ -393,11 +394,21 @@ export async function calculateAccountStats(accountId: string, client?: Supabase
     const buyTransactions = (transactions as Transaction[])?.filter((t) => t.type === 'buy') || [];
     const sellTransactions = (transactions as Transaction[])?.filter((t) => t.type === 'sell') || [];
 
-    const totalInvested = buyTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
-    const totalReturned = sellTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
-    const totalGains = totalReturned - totalInvested;
+    const totalBought = buyTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
+    const totalSold = sellTransactions.reduce((sum: number, t) => sum + Number(t.amount), 0);
+    
+    const realizedGains = totalSold - totalBought;
 
-    const gainPercent = totalInvested > 0 ? (totalGains / totalInvested) * 100 : 0;
+    const openPositions = await getOpenPositions(accountId, client);
+    const unrealizedGains = openPositions.reduce((total: number, pos) => {
+        const invested = Number(pos.quantity) * Number(pos.entry_price);
+        const current = Number(pos.quantity) * Number(pos.current_price);
+        return total + (current - invested);
+    }, 0);
+
+    const totalGains = realizedGains + unrealizedGains;
+
+    const gainPercent = totalBought > 0 ? (totalGains / totalBought) * 100 : 0;
 
     const { data: closedTrades } = await db
         .from('positions')

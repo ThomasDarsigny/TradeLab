@@ -45,6 +45,7 @@
 	let chart: IChartApi | null = null;
 	let candleSeries: ISeriesApi<'Candlestick'> | null = null;
 	let smaSeries: ISeriesApi<'Line'> | null = null;
+	let emaSeries: ISeriesApi<'Line'> | null = null;
 	let lineSeries: ISeriesApi<'Line'> | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -53,6 +54,11 @@
 	let isInWatchlist = $derived($watchlist.includes(symbol.toUpperCase()));
 	let candlestickWs: any = null;
 	let lastCandleTime: number = 0;
+	
+	let showSMA = $state(true);
+	let showEMA = $state(false);
+	let smaPeriod = $state(20);
+	let emaPeriod = $state(50);
 
 	function isMarketOpen(): { stock: boolean; crypto: boolean; isCrypto: boolean } {
 		const isCrypto = symbol.toUpperCase().includes('-USD') || 
@@ -81,39 +87,37 @@
 
 	let marketStatus = $state(isMarketOpen());
 
+
 	onMount(async () => {
-		if (symbol) {
-			await tick();
-			await loadChartData(selectedPeriod);
-			
-			try {
-				candlestickWs = getCandlestickWebSocket();
-				await candlestickWs.connect();
-				candlestickWs.subscribe(symbol, handleCandleUpdate);
-				console.log(` WebSocket candlesticks connected for ${symbol}`);
-			} catch (err) {
-				console.error(' Failed to connect candlestick WebSocket:', err);
-			}
-		}
-	});
+		   if (symbol) {
+			   await tick();
+			   await loadChartData(selectedPeriod);
+			   if (!candlestickWs) {
+				   candlestickWs = getCandlestickWebSocket();
+				   await candlestickWs.connect();
+			   }
+			   candlestickWs.subscribe(symbol, handleCandleUpdate);
+			   console.log(` WebSocket candlesticks connected for ${symbol}`);
+		   }
+	   });
 
 	onDestroy(() => {
-		if (candlestickWs && symbol) {
-			try {
-				candlestickWs.unsubscribe(symbol, handleCandleUpdate);
-				console.log(` WebSocket unsubscribed from ${symbol}`);
-			} catch (err) {
-				console.error(' Failed to unsubscribe from candlestick WebSocket:', err);
-			}
-		}
-		
-		stopAutoRefresh();
-		resizeObserver?.disconnect();
-		resizeObserver = null;
-		chart?.remove();
-		chart = null;
-		candleSeries = null;
-		smaSeries = null;
+		   if (candlestickWs && symbol) {
+			   try {
+				   candlestickWs.unsubscribe(symbol, handleCandleUpdate);
+				   console.log(` WebSocket unsubscribed from ${symbol}`);
+			   } catch (err) {
+				   console.error(' Failed to unsubscribe from candlestick WebSocket:', err);
+			   }
+		   }
+		   stopAutoRefresh();
+		   resizeObserver?.disconnect();
+		   resizeObserver = null;
+		   chart?.remove();
+		   chart = null;
+		   candleSeries = null;
+		   smaSeries = null;
+		   emaSeries = null;
 	});
 
 	$effect(() => {
@@ -134,14 +138,17 @@
 		}
 	});
 
+
 	$effect(() => {
 		if (chartType === 'candles') {
 			candleSeries?.applyOptions({ visible: true });
-			smaSeries?.applyOptions({ visible: true });
+			smaSeries?.applyOptions({ visible: showSMA });
+			emaSeries?.applyOptions({ visible: showEMA });
 			lineSeries?.applyOptions({ visible: false });
 		} else {
 			candleSeries?.applyOptions({ visible: false });
 			smaSeries?.applyOptions({ visible: false });
+			emaSeries?.applyOptions({ visible: false });
 			lineSeries?.applyOptions({ visible: true });
 		}
 	});
@@ -221,6 +228,25 @@
 			sma.push({ time: normalizeTimestamp(timestamps[i]), value: sum / period });
 		}
 		return sma;
+	}
+
+	function buildEMA(closes: number[], timestamps: Array<string | number>, period: number = 50): LineData[] {
+		const ema: LineData[] = [];
+		if (closes.length < period) return ema;
+		
+		let sum = 0;
+		for (let i = 0; i < period; i++) {
+			sum += closes[i];
+		}
+		let prevEMA = sum / period;
+		ema.push({ time: normalizeTimestamp(timestamps[period - 1]), value: prevEMA });
+		
+		const k = 2 / (period + 1);
+		for (let i = period; i < closes.length; i++) {
+			prevEMA = closes[i] * k + prevEMA * (1 - k);
+			ema.push({ time: normalizeTimestamp(timestamps[i]), value: prevEMA });
+		}
+		return ema;
 	}
 
 	function normalizeTimestamp(value: string | number): UTCTimestamp {
@@ -325,18 +351,27 @@
 		});
 		smaSeries = _sma;
 
+		const _ema = chart.addSeries(LineSeries, {
+			color: '#f59e0b',
+			lineWidth: 2
+		});
+		emaSeries = _ema;
+
 		const _line = chart.addSeries(LineSeries, {
 			color: '#10b981',
 			lineWidth: 2
 		});
 		lineSeries = _line;
-		console.log('✅ Series init:', { candleSeries, smaSeries, lineSeries });
+		console.log('✅ Series init:', { candleSeries, smaSeries, emaSeries, lineSeries });
 
 		if (chartType === 'line') {
 			candleSeries.applyOptions({ visible: false });
 			smaSeries.applyOptions({ visible: false });
+			emaSeries.applyOptions({ visible: false });
 		} else {
 			lineSeries.applyOptions({ visible: false });
+			smaSeries.applyOptions({ visible: showSMA });
+			emaSeries.applyOptions({ visible: showEMA });
 		}
 
 		resizeObserver = new ResizeObserver((entries) => {
@@ -352,76 +387,75 @@
 	}
 
 	async function loadChartData(period: string) {
-		if (!chartContainer) return;
-		initChart();
+		   if (!chartContainer) return;
+		   initChart();
 
-		chartLoading = true;
-		chartError = '';
-		try {
-			const response = await fetch(`/api/stock/${symbol}/candles?period=${period}`);
-			
-			if (!response.ok) {
-				chartError = 'Données du graphique indisponibles';
-				return;
-			}
+		   chartLoading = true;
+		   chartError = '';
+		   try {
+			   const response = await fetch(`/api/stock/${symbol}/candles?period=${period}`);
+			   if (!response.ok) {
+				   chartError = 'Données du graphique indisponibles';
+				   return;
+			   }
 
-			const data = await response.json();
-			
-			if (data.error || !data.timestamps || data.timestamps.length === 0) {
-				chartError = data.error || 'Aucune donnée disponible pour le graphique';
-				return;
-			}
+			   const data = await response.json();
+			   if (data.error || !data.timestamps || data.timestamps.length === 0) {
+				   chartError = data.error || 'Aucune donnée disponible pour le graphique';
+				   return;
+			   }
 
-			const length = Math.min(
-				data.timestamps.length,
-				data.open.length,
-				data.high.length,
-				data.low.length,
-				data.close.length
-			);
+			   const length = Math.min(
+				   data.timestamps.length,
+				   data.open.length,
+				   data.high.length,
+				   data.low.length,
+				   data.close.length
+			   );
 
-			if (length === 0) {
-				chartError = 'Aucune donnee disponible pour le graphique';
-				candleSeries?.setData([]);
-				smaSeries?.setData([]);
-				return;
-			}
+			   if (length === 0) {
+				   chartError = 'Aucune donnee disponible pour le graphique';
+				   candleSeries?.setData([]);
+				   smaSeries?.setData([]);
+				   return;
+			   }
 
-			const candles: CandlestickData[] = [];
-			const lineData: LineData[] = [];
-			for (let i = 0; i < length; i++) {
-				const time = normalizeTimestamp(data.timestamps[i]);
-				const close = Number(data.close[i]);
-				candles.push({
-					time,
-					open: Number(data.open[i]),
-					high: Number(data.high[i]),
-					low: Number(data.low[i]),
-					close
-				});
-				lineData.push({ time, value: close });
-			}
+			   const candles: CandlestickData[] = [];
+			   const lineData: LineData[] = [];
+			   for (let i = 0; i < length; i++) {
+				   const time = normalizeTimestamp(data.timestamps[i]);
+				   const close = Number(data.close[i]);
+				   candles.push({
+					   time,
+					   open: Number(data.open[i]),
+					   high: Number(data.high[i]),
+					   low: Number(data.low[i]),
+					   close
+				   });
+				   lineData.push({ time, value: close });
+			   }
 
-			candleSeries?.setData(candles);
-			lastCandleTime = candles.length > 0 ? (candles[candles.length - 1].time as any) : 0;
-			console.log(`📊 lastCandleTime défini à ${lastCandleTime}`);
-			
-			smaSeries?.setData(buildSMA(data.close.slice(0, length), data.timestamps.slice(0, length), 20));
-			lineSeries?.setData(lineData);
-			chart?.timeScale().fitContent();
-			
-			if (pendingCandleUpdates.length > 0) {
-				console.log(`✅ Application de ${pendingCandleUpdates.length} updates bufferisées après loadChartData`);
-				for (const update of pendingCandleUpdates) {
-					applyCandleUpdate(update);
-				}
-				pendingCandleUpdates = [];
-			}
-		} catch (err) {
-			chartError = 'Erreur lors du chargement du graphique';
-		} finally {
-			chartLoading = false;
-		}
+			   candleSeries?.setData(candles);
+			   lastCandleTime = candles.length > 0 ? (candles[candles.length - 1].time as any) : 0;
+			   console.log(`📊 lastCandleTime défini à ${lastCandleTime}`);
+           
+			   smaSeries?.setData(buildSMA(data.close.slice(0, length), data.timestamps.slice(0, length), smaPeriod));
+			   emaSeries?.setData(buildEMA(data.close.slice(0, length), data.timestamps.slice(0, length), emaPeriod));
+			   lineSeries?.setData(lineData);
+			   chart?.timeScale().fitContent();
+           
+			   if (pendingCandleUpdates.length > 0) {
+				   console.log(`✅ Application de ${pendingCandleUpdates.length} updates bufferisées après loadChartData`);
+				   for (const update of pendingCandleUpdates) {
+					   applyCandleUpdate(update);
+				   }
+				   pendingCandleUpdates = [];
+			   }
+		   } catch (err) {
+			   chartError = 'Erreur lors du chargement du graphique';
+		   } finally {
+			   chartLoading = false;
+		   }
 	}
 
 	function formatNumber(num: number): string {
@@ -543,6 +577,24 @@
 									{mode === 'candles' ? 'Candlesticks' : 'Lineaire'}
 								</button>
 							{/each}
+						</div>
+						<div class="indicators-selector">
+							<button
+								class="period-btn {showSMA ? 'active' : ''}"
+								onclick={() => showSMA = !showSMA}
+								title="Moyenne Mobile Simple (SMA)"
+								disabled={chartLoading || chartType === 'line'}
+							>
+								SMA {smaPeriod}
+							</button>
+							<button
+								class="ema-btn {showEMA ? 'active' : ''}"
+								onclick={() => showEMA = !showEMA}
+								title="Moyenne Mobile Exponentielle (EMA)"
+								disabled={chartLoading || chartType === 'line'}
+							>
+								EMA {emaPeriod}
+							</button>
 						</div>
 					</div>
 
