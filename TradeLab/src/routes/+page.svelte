@@ -13,6 +13,8 @@
 	let showBalanceChart = $state(false);
 	let portfolioRealtimeChannel: any = null;
 	let realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let balanceChartFrame: number | null = null;
+	let lastBalanceChartSignature = "";
 
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
@@ -46,11 +48,40 @@
 
 
 	$effect(() => {
-		if (showBalanceChart && account && transactions.length >= 0) {
-			setTimeout(() => {
-				drawBalanceChart(account!, transactions);
-			}, 0);
+		if (!showBalanceChart || !account) {
+			if (balanceChartFrame !== null) {
+				cancelAnimationFrame(balanceChartFrame);
+				balanceChartFrame = null;
+			}
+			lastBalanceChartSignature = "";
+			return;
 		}
+
+		const lastTx = transactions.at(-1);
+		const signature = [
+			account.current_balance,
+			account.initial_balance,
+			transactions.length,
+			lastTx?.id ?? "",
+			lastTx?.created_at ?? "",
+		].join("|");
+
+		if (signature === lastBalanceChartSignature) {
+			return;
+		}
+
+		lastBalanceChartSignature = signature;
+
+		if (balanceChartFrame !== null) {
+			cancelAnimationFrame(balanceChartFrame);
+		}
+
+		const currentAccount = account;
+
+		balanceChartFrame = requestAnimationFrame(() => {
+			drawBalanceChart(currentAccount, transactions);
+			balanceChartFrame = null;
+		});
 	});
 
 	const gainForLifetime = $derived.by(() => {
@@ -298,6 +329,14 @@
 			clearInterval(accountInterval);
 			clearInterval(positionsInterval);
 			clearInterval(transactionsInterval);
+			if (balanceChartFrame !== null) {
+				cancelAnimationFrame(balanceChartFrame);
+				balanceChartFrame = null;
+			}
+			if ((window as any).balanceChartInstance) {
+				(window as any).balanceChartInstance.destroy();
+				(window as any).balanceChartInstance = null;
+			}
 		};
 	});
 
@@ -621,14 +660,6 @@
 		</div>
 	</div>
 {/if}
-
-<svelte:window
-	onload={() => {
-		if (showBalanceChart && account && transactions) {
-			drawBalanceChart(account, transactions);
-		}
-	}}
-/>
 
 <style>
 	.portfolio-page {

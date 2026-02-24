@@ -240,23 +240,26 @@ async def websocket_candlesticks(websocket: WebSocket):
     
     try:
         while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)
-            
-            action = message.get('action')
-            symbols = message.get('symbols', [])
-            
-            if action == 'subscribe':
-                for symbol in symbols:
-                    manager.subscribe_candlestick(websocket, symbol)
-            elif action == 'unsubscribe':
-                for symbol in symbols:
-                    manager.unsubscribe_candlestick(websocket, symbol)
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=2)
+                message = json.loads(data)
+
+                action = message.get('action')
+                symbols = message.get('symbols', [])
+
+                if action == 'subscribe':
+                    for symbol in symbols:
+                        manager.subscribe_candlestick(websocket, symbol)
+                elif action == 'unsubscribe':
+                    for symbol in symbols:
+                        manager.unsubscribe_candlestick(websocket, symbol)
+            except asyncio.TimeoutError:
+                pass
             
             for sub_symbol in manager.candlestick_subscriptions.get(websocket, set()):
                 try:
                     ticker = yf.Ticker(sub_symbol)
-                    hist = ticker.history(period="1d", interval="5m")
+                    hist = ticker.history(period="1d", interval="1m")
                     
                     if not hist.empty:
                         last_row = hist.iloc[-1]
@@ -281,8 +284,6 @@ async def websocket_candlesticks(websocket: WebSocket):
                         await websocket.send_json(candlestick_data)
                 except Exception as e:
                     print(f"Error fetching candlestick for {sub_symbol}: {e}")
-            
-            await asyncio.sleep(2)
             
     except WebSocketDisconnect:
         manager.disconnect_candlestick(websocket)

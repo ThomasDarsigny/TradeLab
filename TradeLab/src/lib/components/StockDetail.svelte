@@ -53,7 +53,9 @@
 	let refreshInFlight = false;
 	let isInWatchlist = $derived($watchlist.includes(symbol.toUpperCase()));
 	let candlestickWs: any = null;
+	let subscribedSymbol: string | null = null;
 	let lastCandleTime: number = 0;
+	let lastLiveCandle: CandlestickData | null = null;
 	
 	let showSMA = $state(true);
 	let showEMA = $state(false);
@@ -88,22 +90,64 @@
 	let marketStatus = $state(isMarketOpen());
 
 
-	onMount(async () => {
-		   if (symbol) {
-			   if (!candlestickWs) {
-				   candlestickWs = getCandlestickWebSocket();
-				   await candlestickWs.connect();
-			   }
-			   candlestickWs.subscribe(symbol, handleCandleUpdate);
-			   console.log(` WebSocket candlesticks connected for ${symbol}`);
-		   }
-	   });
+	onMount(() => {
+		marketStatus = isMarketOpen();
+	});
+
+	$effect(() => {
+		const currentSymbol = symbol?.toUpperCase();
+		if (!currentSymbol) {
+			return;
+		}
+
+		let disposed = false;
+
+		const subscribe = async () => {
+			candlestickWs = candlestickWs ?? getCandlestickWebSocket();
+
+			if (!candlestickWs.isConnected()) {
+				try {
+					await candlestickWs.connect();
+				} catch (err) {
+					console.error('Failed to connect candlestick websocket:', err);
+					return;
+				}
+			}
+
+			if (disposed) {
+				return;
+			}
+
+			if (subscribedSymbol && subscribedSymbol !== currentSymbol) {
+				candlestickWs.unsubscribe(subscribedSymbol, handleCandleUpdate);
+			}
+
+			candlestickWs.subscribe(currentSymbol, handleCandleUpdate);
+			subscribedSymbol = currentSymbol;
+			console.log(`WebSocket candlesticks connected for ${currentSymbol}`);
+		};
+
+		void subscribe();
+
+		return () => {
+			disposed = true;
+			if (candlestickWs && subscribedSymbol === currentSymbol) {
+				try {
+					candlestickWs.unsubscribe(currentSymbol, handleCandleUpdate);
+					console.log(`WebSocket unsubscribed from ${currentSymbol}`);
+				} catch (err) {
+					console.error('Failed to unsubscribe from candlestick WebSocket:', err);
+				}
+				subscribedSymbol = null;
+			}
+		};
+	});
 
 	onDestroy(() => {
-		   if (candlestickWs && symbol) {
+		   if (candlestickWs && subscribedSymbol) {
 			   try {
-				   candlestickWs.unsubscribe(symbol, handleCandleUpdate);
-				   console.log(` WebSocket unsubscribed from ${symbol}`);
+				   candlestickWs.unsubscribe(subscribedSymbol, handleCandleUpdate);
+				   console.log(` WebSocket unsubscribed from ${subscribedSymbol}`);
 			   } catch (err) {
 				   console.error(' Failed to unsubscribe from candlestick WebSocket:', err);
 			   }
@@ -286,9 +330,34 @@
 		return seconds as UTCTimestamp;
 	}
 
+	function getIntervalSeconds(period: string): number {
+		switch (period) {
+			case '1m':
+				return 60;
+			case '5m':
+				return 300;
+			case '1D':
+				return 1800;
+			case '1W':
+			case '1M':
+			case '3M':
+				return 86400;
+			case '1Y':
+				return 604800;
+			case '5Y':
+				return 2592000;
+			default:
+				return 60;
+		}
+	}
+
 	let pendingCandleUpdates: CandlestickUpdate[] = [];
 
 	function handleCandleUpdate(data: CandlestickUpdate) {
+		if (!data?.symbol || data.symbol.toUpperCase() !== symbol.toUpperCase()) {
+			return;
+		}
+
 		console.log('📡 WebSocket recoit :', data);
 		console.log('📊 Etat de candleSeries :', candleSeries);
 
@@ -309,8 +378,12 @@
 
 	function applyCandleUpdate(data: CandlestickUpdate) {
 		const timestamp = normalizeTimestamp(data.time);
+		const intervalSeconds = getIntervalSeconds(selectedPeriod);
+		const bucketTime = Math.floor(Number(timestamp) / intervalSeconds) * intervalSeconds;
+		const bucketTimestamp = bucketTime as UTCTimestamp;
+
 		const candleData: CandlestickData = {
-			time: timestamp,
+			time: bucketTimestamp,
 			open: Number(data.open),
 			high: Number(data.high),
 			low: Number(data.low),
@@ -321,16 +394,34 @@
 			return;
 		}
 
-		if (timestamp < lastCandleTime) {
+		if (bucketTime < lastCandleTime) {
+			return;
+		}
+
+		if (bucketTime === lastCandleTime && lastLiveCandle) {
+			const mergedCandle: CandlestickData = {
+				time: bucketTimestamp,
+				open: Number(lastLiveCandle.open),
+				high: Math.max(Number(lastLiveCandle.high), candleData.high),
+				low: Math.min(Number(lastLiveCandle.low), candleData.low),
+				close: candleData.close
+			};
+
+			candleSeries.update(mergedCandle);
+			lineSeries?.update({ time: bucketTimestamp, value: mergedCandle.close });
+			stockData.price = mergedCandle.close;
+			lastLiveCandle = mergedCandle;
+			chart?.timeScale().scrollToRealTime();
 			return;
 		}
 
 		console.log('🔥 Envoi live au graphique ->', data.close);
 		candleSeries.update(candleData);
-		lineSeries?.update({ time: timestamp, value: candleData.close });
+		lineSeries?.update({ time: bucketTimestamp, value: candleData.close });
 		stockData.price = candleData.close;
-		if (timestamp > lastCandleTime) {
-			lastCandleTime = timestamp;
+		if (bucketTime > lastCandleTime) {
+			lastCandleTime = bucketTime;
+			lastLiveCandle = candleData;
 		}
 		chart?.timeScale().scrollToRealTime();
 	}
@@ -475,6 +566,7 @@
 
 			   candleSeries?.setData(candles);
 			   lastCandleTime = candles.length > 0 ? (candles[candles.length - 1].time as any) : 0;
+			   lastLiveCandle = candles.length > 0 ? candles[candles.length - 1] : null;
 			   console.log(`📊 lastCandleTime défini à ${lastCandleTime}`);
            
 			   smaSeries?.setData(buildSMA(data.close.slice(0, length), data.timestamps.slice(0, length), smaPeriod));
@@ -594,45 +686,66 @@
 					</div>
 
 					<div class="chart-controls">
-						<div class="period-selector">
-							{#each ['1m', '5m', '1D', '1W', '1M', '3M', '1Y', '5Y'] as period}
-								<button
-									class="period-btn {selectedPeriod === period ? 'active' : ''}"
-									onclick={() => selectedPeriod = period}
-									disabled={chartLoading}
-								>
-									{period}
-								</button>
-							{/each}
+						<div class="control-group">
+							<span class="control-label">Periode</span>
+							<div class="period-selector">
+								{#each ['1m', '5m', '1D', '1W', '1M', '3M', '1Y', '5Y'] as period}
+									<button
+										class="period-btn {selectedPeriod === period ? 'active' : ''}"
+										onclick={() => selectedPeriod = period}
+										disabled={chartLoading}
+									>
+										{period}
+									</button>
+								{/each}
+							</div>
 						</div>
-						<div class="period-selector">
-							{#each ['candles', 'line'] as mode}
-								<button
-									class="period-btn {chartType === mode ? 'active' : ''}"
-									onclick={() => chartType = mode as 'candles' | 'line'}
-									disabled={chartLoading}
-								>
-									{mode === 'candles' ? 'Candlesticks' : 'Lineaire'}
-								</button>
-							{/each}
+						<div class="control-group">
+							<span class="control-label">Type de graphe</span>
+							<div class="period-selector">
+								{#each ['candles', 'line'] as mode}
+									<button
+										class="period-btn {chartType === mode ? 'active' : ''}"
+										onclick={() => chartType = mode as 'candles' | 'line'}
+										disabled={chartLoading}
+									>
+										{mode === 'candles' ? 'Candlesticks' : 'Lineaire'}
+									</button>
+								{/each}
+							</div>
 						</div>
-						<div class="indicators-selector">
-							<button
-								class="period-btn {showSMA ? 'active' : ''}"
-								onclick={toggleSMA}
-								title="Moyenne Mobile Simple (SMA)"
-								disabled={chartLoading}
-							>
-								SMA {smaPeriod}
-							</button>
-							<button
-								class="ema-btn {showEMA ? 'active' : ''}"
-								onclick={toggleEMA}
-								title="Moyenne Mobile Exponentielle (EMA)"
-								disabled={chartLoading}
-							>
-								EMA {emaPeriod}
-							</button>
+						<div class="control-group">
+							<span class="control-label">Indicateurs</span>
+							<div class="indicators-selector">
+								<div class="indicator-item">
+									<button
+										class="period-btn {showSMA ? 'active' : ''}"
+										onclick={toggleSMA}
+										aria-label="Activer ou desactiver SMA 20"
+										disabled={chartLoading}
+									>
+										SMA {smaPeriod}
+									</button>
+									<button type="button" class="indicator-help" aria-label="Information SMA20">
+										i
+										<span class="indicator-tooltip">SMA20 = moyenne mobile simple sur 20 periodes. Elle lisse la tendance court terme.</span>
+									</button>
+								</div>
+								<div class="indicator-item">
+									<button
+										class="ema-btn {showEMA ? 'active' : ''}"
+										onclick={toggleEMA}
+										aria-label="Activer ou desactiver EMA 50"
+										disabled={chartLoading}
+									>
+										EMA {emaPeriod}
+									</button>
+									<button type="button" class="indicator-help" aria-label="Information EMA50">
+										i
+										<span class="indicator-tooltip">EMA50 = moyenne mobile exponentielle sur 50 periodes. Elle reagit plus vite aux changements recents.</span>
+									</button>
+								</div>
+							</div>
 						</div>
 					</div>
 
