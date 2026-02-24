@@ -13,8 +13,14 @@
 	let showBalanceChart = $state(false);
 	let portfolioRealtimeChannel: any = null;
 	let realtimeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let balanceChartInterval: ReturnType<typeof setInterval> | null = null;
 	let balanceChartFrame: number | null = null;
 	let lastBalanceChartSignature = "";
+	let balanceChartRefreshCount = $state(0);
+	let balanceChartLastRefresh = $state<string | null>(null);
+	let balanceZoomLevel = $state(1);
+	let isBalanceChartPanning = $state(false);
+	let balancePanStartX: number | null = null;
 
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
@@ -45,6 +51,38 @@
 	);
 
 	const totalGain = $derived(totalCurrent - totalInvested);
+
+	$effect(() => {
+		if (!showBalanceChart || !account) {
+			if (balanceChartInterval) {
+				clearInterval(balanceChartInterval);
+				balanceChartInterval = null;
+			}
+			return;
+		}
+
+		const refreshModalChart = async () => {
+			await Promise.all([updateAccountData(), updateTransactionsData()]);
+			if (account) {
+				drawBalanceChart(account, transactions);
+			}
+		};
+
+		if (balanceChartInterval) {
+			clearInterval(balanceChartInterval);
+		}
+
+		balanceChartInterval = setInterval(() => {
+			void refreshModalChart();
+		}, 30000);
+
+		return () => {
+			if (balanceChartInterval) {
+				clearInterval(balanceChartInterval);
+				balanceChartInterval = null;
+			}
+		};
+	});
 
 
 	$effect(() => {
@@ -329,6 +367,10 @@
 			clearInterval(accountInterval);
 			clearInterval(positionsInterval);
 			clearInterval(transactionsInterval);
+			if (balanceChartInterval) {
+				clearInterval(balanceChartInterval);
+				balanceChartInterval = null;
+			}
 			if (balanceChartFrame !== null) {
 				cancelAnimationFrame(balanceChartFrame);
 				balanceChartFrame = null;
@@ -359,6 +401,151 @@
 		Tooltip,
 		Legend,
 	);
+
+	function formatRefreshTime(date: Date): string {
+		return date.toLocaleTimeString("fr-CA", {
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+		});
+	}
+
+	function updateChartRefreshStatus() {
+		balanceChartRefreshCount += 1;
+		balanceChartLastRefresh = formatRefreshTime(new Date());
+	}
+
+	function setChartZoom(min: number | undefined, max: number | undefined) {
+		if (typeof window === "undefined") return;
+		const instance = (window as any).balanceChartInstance;
+		if (!instance) return;
+
+		instance.options.scales.x.min = min;
+		instance.options.scales.x.max = max;
+		instance.update("none");
+	}
+
+	function zoomBalanceChartIn() {
+		if (typeof window === "undefined") return;
+		const instance = (window as any).balanceChartInstance;
+		if (!instance) return;
+
+		const labelsLength = instance.data?.labels?.length ?? 0;
+		if (labelsLength < 4) return;
+
+		const currentMin = Number.isFinite(instance.options.scales.x.min)
+			? Number(instance.options.scales.x.min)
+			: 0;
+		const currentMax = Number.isFinite(instance.options.scales.x.max)
+			? Number(instance.options.scales.x.max)
+			: labelsLength - 1;
+
+		const visible = currentMax - currentMin + 1;
+		if (visible <= 4) return;
+
+		const reduceBy = Math.max(1, Math.floor(visible * 0.2));
+		const nextMin = currentMin + Math.floor(reduceBy / 2);
+		const nextMax = currentMax - Math.ceil(reduceBy / 2);
+
+		setChartZoom(nextMin, nextMax);
+		balanceZoomLevel = Math.min(8, Number((balanceZoomLevel * 1.25).toFixed(2)));
+	}
+
+	function zoomBalanceChartOut() {
+		if (typeof window === "undefined") return;
+		const instance = (window as any).balanceChartInstance;
+		if (!instance) return;
+
+		const labelsLength = instance.data?.labels?.length ?? 0;
+		if (labelsLength < 2) return;
+
+		const currentMin = Number.isFinite(instance.options.scales.x.min)
+			? Number(instance.options.scales.x.min)
+			: 0;
+		const currentMax = Number.isFinite(instance.options.scales.x.max)
+			? Number(instance.options.scales.x.max)
+			: labelsLength - 1;
+
+		const visible = currentMax - currentMin + 1;
+		if (visible >= labelsLength) {
+			setChartZoom(undefined, undefined);
+			balanceZoomLevel = 1;
+			return;
+		}
+
+		const growBy = Math.max(1, Math.floor(visible * 0.25));
+		const nextMin = Math.max(0, currentMin - Math.floor(growBy / 2));
+		const nextMax = Math.min(labelsLength - 1, currentMax + Math.ceil(growBy / 2));
+
+		setChartZoom(nextMin, nextMax);
+		balanceZoomLevel = Math.max(1, Number((balanceZoomLevel / 1.25).toFixed(2)));
+	}
+
+	function handleBalanceChartWheel(event: WheelEvent) {
+		event.preventDefault();
+		if (event.deltaY < 0) {
+			zoomBalanceChartIn();
+			return;
+		}
+		zoomBalanceChartOut();
+	}
+
+	function startBalanceChartPan(event: MouseEvent) {
+		if (event.button !== 0) return;
+		isBalanceChartPanning = true;
+		balancePanStartX = event.clientX;
+	}
+
+	function stopBalanceChartPan() {
+		isBalanceChartPanning = false;
+		balancePanStartX = null;
+	}
+
+	function moveBalanceChartPan(event: MouseEvent) {
+		if (!isBalanceChartPanning || balancePanStartX === null) return;
+
+		const instance = (window as any).balanceChartInstance;
+		const canvas = event.currentTarget as HTMLCanvasElement | null;
+		if (!instance || !canvas) return;
+
+		const labelsLength = instance.data?.labels?.length ?? 0;
+		if (labelsLength < 2) return;
+
+		const currentMin = Number.isFinite(instance.options.scales.x.min)
+			? Number(instance.options.scales.x.min)
+			: 0;
+		const currentMax = Number.isFinite(instance.options.scales.x.max)
+			? Number(instance.options.scales.x.max)
+			: labelsLength - 1;
+
+		const visible = currentMax - currentMin + 1;
+		if (visible >= labelsLength) return;
+
+		const deltaX = event.clientX - balancePanStartX;
+		const width = Math.max(1, canvas.clientWidth);
+		const shift = Math.round((deltaX / width) * visible);
+		if (shift === 0) return;
+
+		let nextMin = currentMin - shift;
+		let nextMax = currentMax - shift;
+
+		if (nextMin < 0) {
+			nextMax -= nextMin;
+			nextMin = 0;
+		}
+
+		if (nextMax > labelsLength - 1) {
+			const overflow = nextMax - (labelsLength - 1);
+			nextMin -= overflow;
+			nextMax = labelsLength - 1;
+		}
+
+		nextMin = Math.max(0, Math.round(nextMin));
+		nextMax = Math.min(labelsLength - 1, Math.round(nextMax));
+
+		setChartZoom(nextMin, nextMax);
+		balancePanStartX = event.clientX;
+	}
 
 	function drawBalanceChart(account: Account, transactions: Transaction[]) {
 		const canvas = document.getElementById(
@@ -404,6 +591,14 @@
 		if (!ctx) return;
 
 		if (typeof window !== "undefined") {
+			const previousChart = (window as any).balanceChartInstance;
+			const previousMin = Number.isFinite(previousChart?.options?.scales?.x?.min)
+				? Number(previousChart.options.scales.x.min)
+				: undefined;
+			const previousMax = Number.isFinite(previousChart?.options?.scales?.x?.max)
+				? Number(previousChart.options.scales.x.max)
+				: undefined;
+
 			if ((window as any).balanceChartInstance) {
 				(window as any).balanceChartInstance.destroy();
 			}
@@ -481,6 +676,8 @@
 							},
 						},
 						x: {
+							min: previousMin,
+							max: previousMax,
 							ticks: {
 								color: textPrimary,
 								autoSkip: true,
@@ -494,6 +691,7 @@
 					},
 				},
 			});
+			updateChartRefreshStatus();
 		}
 	}
 
@@ -635,7 +833,6 @@
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
-		onclick={() => (showBalanceChart = false)}
 		onkeydown={(e) => e.key === "Escape" && (showBalanceChart = false)}
 	>
 		<div class="modal-card" role="document">
@@ -652,10 +849,22 @@
 				>
 			</div>
 			<div class="balance-chart-container">
-				<p class="chart-info">
-					Évolution du solde total de votre compte au fil du temps
-				</p>
-				<canvas id="balance-chart" style="height: 380px; max-height: 400px;"></canvas>
+				<div class="chart-toolbar">
+					<p class="chart-info">
+						Évolution du solde total de votre compte au fil du temps
+					</p>
+				</div>
+				<canvas
+					id="balance-chart"
+					class="balance-chart-canvas"
+					class:panning={isBalanceChartPanning}
+					onwheel={handleBalanceChartWheel}
+					onmousedown={startBalanceChartPan}
+					onmousemove={moveBalanceChartPan}
+					onmouseup={stopBalanceChartPan}
+					onmouseleave={stopBalanceChartPan}
+					style="height: 380px; max-height: 400px;"
+				></canvas>
 			</div>
 		</div>
 	</div>
@@ -945,6 +1154,33 @@
 		margin: 0 0 1rem 0;
 	}
 
+	.balance-chart-canvas {
+		cursor: grab;
+		user-select: none;
+	}
+
+	.balance-chart-canvas.panning {
+		cursor: grabbing;
+	}
+
+	.chart-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.5rem;
+	}
+
+	@keyframes pulseLive {
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.45;
+		}
+	}
+
 	@media (max-width: 768px) {
 		.page-header {
 			flex-direction: column;
@@ -958,6 +1194,11 @@
 
 		.modal-header h3 {
 			font-size: 1.2rem;
+		}
+
+		.chart-toolbar {
+			flex-direction: column;
+			align-items: flex-start;
 		}
 	}
 </style>
