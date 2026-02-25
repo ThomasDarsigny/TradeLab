@@ -15,8 +15,36 @@ const EXCHANGES = [
 
 const FINNHUB_ALLOWED_TYPES = new Set(['Common Stock', 'ADR', 'ETP', 'Crypto']);
 const YAHOO_ALLOWED_TYPES = new Set(['EQUITY', 'ETF', 'CRYPTO', 'CRYPTOCURRENCY']);
+//ici
+const MAJOR_INDICES = [
+	{ symbol: '^GSPC', name: 'S&P 500', country: '🇺🇸', exchange: 'Indice' },
+	{ symbol: '^IXIC', name: 'NASDAQ Composite', country: '🇺🇸', exchange: 'Indice' },
+	{ symbol: '^DJI', name: 'Dow Jones Industrial Average', country: '🇺🇸', exchange: 'Indice' },
+	{ symbol: '^RUT', name: 'Russell 2000', country: '🇺🇸', exchange: 'Indice' },
+	{ symbol: '^VIX', name: 'CBOE Volatility Index (VIX)', country: '🇺🇸', exchange: 'Indice' },
+	{ symbol: '^FCHI', name: 'CAC 40', country: '🇫🇷', exchange: 'Indice' },
+	{ symbol: '^GDAXI', name: 'DAX', country: '🇩🇪', exchange: 'Indice' },
+	{ symbol: '^FTSE', name: 'FTSE 100', country: '🇬🇧', exchange: 'Indice' },
+	{ symbol: '^N225', name: 'Nikkei 225', country: '🇯🇵', exchange: 'Indice' },
+	{ symbol: '^HSI', name: 'Hang Seng', country: '🇭🇰', exchange: 'Indice' },
+	{ symbol: '^GSPTSE', name: 'S&P/TSX Composite', country: '🇨🇦', exchange: 'Indice' }
+];
 
 const normalizeSearchToken = (value: string) => value.replace(/[-/\s]/g, '').toUpperCase();
+
+const matchesIndexQuery = (query: string, index: { symbol: string; name: string }) => {
+	const normalizedQuery = normalizeSearchToken(query);
+	const normalizedSymbol = normalizeSearchToken(index.symbol);
+	const normalizedName = normalizeSearchToken(index.name);
+	const queryLower = query.toLowerCase();
+
+	return (
+		normalizedSymbol.includes(normalizedQuery) ||
+		normalizedName.includes(normalizedQuery) ||
+		index.symbol.toLowerCase().includes(queryLower) ||
+		index.name.toLowerCase().includes(queryLower)
+	);
+};
 
 export const GET: RequestHandler = async ({ url }) => {
 	if (!PUBLIC_FINNHUB_API_KEY) {
@@ -30,6 +58,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		if (query) {
 			let symbols: any[] = [];
+			const matchedIndices = MAJOR_INDICES.filter((index) => matchesIndexQuery(query, index));
 
 			try {
 				const finnhubQueries = Array.from(
@@ -95,10 +124,20 @@ export const GET: RequestHandler = async ({ url }) => {
 				}
 			}
 
+			if (matchedIndices.length > 0) {
+				const seen = new Set(symbols.map((s) => s.symbol));
+				matchedIndices.forEach((index) => {
+					if (!seen.has(index.symbol)) {
+						symbols.unshift(index);
+						seen.add(index.symbol);
+					}
+				});
+			}
+
 			return json({ symbols });
 		}
 
-		const allSymbols: any[] = [];
+		const allSymbols: any[] = [...MAJOR_INDICES];
 
 		const promises = EXCHANGES.map(async (exchange) => {
 			try {

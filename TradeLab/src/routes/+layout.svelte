@@ -354,57 +354,6 @@ import { page } from '$app/stores';
 		void goto(path);
 	}
 
-	async function updateTradingBotSetting(enabled: boolean, symbols?: string) {
-		tradingBotError = null;
-		const previous = tradingBotEnabled;
-		const previousSymbols = botSymbols;
-		tradingBotEnabled = enabled;
-		if (symbols !== undefined) botSymbols = symbols;
-		tradingBotLoading = true;
-		
-		try {
-			const response = await fetch('/api/settings/trading-bot', {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				credentials: 'include',
-				body: JSON.stringify({ 
-					enabled,
-					symbols: symbols !== undefined ? symbols : botSymbols
-				})
-			});
-
-			if (!response.ok) {
-				let errorMessage = 'Erreur lors de la mise a jour.';
-				try {
-					const data = await response.json();
-					errorMessage = data?.error || errorMessage;
-				} catch {
-				}
-				throw new Error(errorMessage);
-			}
-
-			tradingBotError = null;
-			
-			if (enabled && currentUserId) {
-				await loadBotActions(currentUserId);
-			}
-		} catch (error) {
-			tradingBotEnabled = previous;
-			botSymbols = previousSymbols;
-			tradingBotError = error instanceof Error ? error.message : 'Erreur lors de la mise a jour.';
-			console.error('[Bot Settings Error]', error);
-		} finally {
-			tradingBotLoading = false;
-		}
-	}
-
-	function handleTradingBotToggle(event: Event) {
-		const target = event.target as HTMLInputElement | null;
-		if (!target) return;
-		updateTradingBotSetting(target.checked);
-	}
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -454,6 +403,19 @@ import { page } from '$app/stores';
 					</svg>
 					Actualités
 				</a>
+				<a 
+					class="nav-item" 
+					class:active={$page.url.pathname.startsWith('/trading-bot')} 
+					href="/trading-bot" 
+					onclick={(event) => handleNavClick(event, '/trading-bot')}
+					data-sveltekit-preload-data="hover"
+				>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<polyline points="4 14 9 9 13 13 20 6"></polyline>
+						<polyline points="20 12 20 6 14 6"></polyline>
+					</svg>
+					Trading Bot
+				</a>
 				<div class="profile-dropdown">
 					<button class="profile-icon-btn" onclick={toggleProfileMenu} aria-label="Menu profil">
 						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -484,61 +446,6 @@ import { page } from '$app/stores';
 									</svg>
 									<span>Ajouter des fonds</span>
 								</button>
-								
-								<div class="profile-menu-divider"></div>
-								<div class="theme-section-title" style="display: flex; align-items: center; gap: 0.5rem;">
-									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<circle cx="12" cy="12" r="1"></circle>
-										<path d="M12 7v10M5 12h14"></path>
-									</svg>
-									Trading bot
-								</div>
-								<div class="profile-menu-item bot-settings">
-									<div class="bot-settings-info">
-										<span>Activer le bot de trading</span>
-									</div>
-									<label class="switch">
-										<input
-											type="checkbox"
-											checked={tradingBotEnabled}
-											onchange={handleTradingBotToggle}
-											disabled={tradingBotLoading}
-										/>
-										<span class="switch-slider"></span>
-									</label>
-								</div>
-								
-								{#if tradingBotEnabled}
-									<div class="bot-symbols-config">
-										<label for="bot-symbols">Symboles à trader</label>
-										<textarea
-											id="bot-symbols"
-											bind:value={botSymbols}
-											disabled={tradingBotLoading}
-											placeholder="BTC-USD"
-											rows="3"
-										></textarea>
-										<button 
-											class="bot-symbols-save"
-											onclick={() => updateTradingBotSetting(true, botSymbols)}
-											disabled={tradingBotLoading}
-										>
-											{tradingBotLoading ? '⏳ Mise à jour...' : '✓ Sauvegarder les symboles'}
-										</button>
-										<small class="bot-symbols-hint">Séparez les symboles par des virgules</small>
-									</div>
-								{/if}
-								
-								{#if tradingBotError}
-									<div class="bot-settings-error">
-										<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<circle cx="12" cy="12" r="10"></circle>
-											<line x1="12" y1="8" x2="12" y2="12"></line>
-											<line x1="12" y1="16" x2="12.01" y2="16"></line>
-										</svg>
-										{tradingBotError}
-									</div>
-								{/if}
 								
 								<div class="profile-menu-divider"></div>
 								<div class="theme-section-title">Thèmes</div>
@@ -831,153 +738,6 @@ import { page } from '$app/stores';
 
 	.profile-menu-item.danger:hover {
 		background: rgba(239, 68, 68, 0.1);
-	}
-
-	.bot-settings {
-		justify-content: space-between;
-		align-items: center;
-		gap: 1rem;
-	}
-
-	.bot-settings-info {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.bot-settings-error {
-		padding: 0.75rem 1.5rem;
-		color: var(--accent-red);
-		font-size: 0.85rem;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		background: rgba(239, 68, 68, 0.1);
-		border-left: 3px solid var(--accent-red);
-	}
-
-	.bot-symbols-config {
-		padding: 0 1.5rem 1rem;
-		border-top: 1px solid var(--border-primary);
-		margin-top: 0.5rem;
-	}
-
-	.bot-symbols-config label {
-		display: block;
-		margin-top: 1rem;
-		margin-bottom: 0.5rem;
-		color: var(--text-primary);
-		font-size: 0.9rem;
-		font-weight: 600;
-	}
-
-	.bot-symbols-config textarea {
-		width: 100%;
-		padding: 0.6rem 0.8rem;
-		background: var(--bg-tertiary);
-		border: 1px solid var(--border-primary);
-		border-radius: 8px;
-		color: var(--text-primary);
-		font-family: 'Monaco', 'Courier New', monospace;
-		font-size: 0.85rem;
-		resize: vertical;
-		outline: none;
-		transition: all 0.2s;
-	}
-
-	.bot-symbols-config textarea:focus {
-		border-color: var(--accent-primary);
-		box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-	}
-
-	.bot-symbols-config textarea:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.bot-symbols-save {
-		margin-top: 0.75rem;
-		width: 100%;
-		padding: 0.75rem;
-		background: linear-gradient(135deg, var(--accent-primary), #0652dd);
-		color: white;
-		border: none;
-		border-radius: 8px;
-		cursor: pointer;
-		font-size: 0.9rem;
-		font-weight: 600;
-		transition: all 0.2s;
-		box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-	}
-
-	.bot-symbols-save:hover:not(:disabled) {
-		transform: translateY(-2px);
-		box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
-	}
-
-	.bot-symbols-save:disabled {
-		opacity: 0.7;
-		cursor: not-allowed;
-		box-shadow: none;
-	}
-
-	.bot-symbols-hint {
-		display: block;
-		margin-top: 0.5rem;
-		color: var(--text-muted);
-		font-size: 0.75rem;
-	}
-
-	.switch {
-		position: relative;
-		display: inline-block;
-		width: 44px;
-		height: 24px;
-		flex-shrink: 0;
-	}
-
-	.switch input {
-		opacity: 0;
-		width: 0;
-		height: 0;
-	}
-
-	.switch-slider {
-		position: absolute;
-		cursor: pointer;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: var(--border-secondary);
-		transition: 0.2s;
-		border-radius: 999px;
-	}
-
-	.switch-slider:before {
-		position: absolute;
-		content: '';
-		height: 18px;
-		width: 18px;
-		left: 3px;
-		bottom: 3px;
-		background: var(--bg-secondary);
-		transition: 0.2s;
-		border-radius: 999px;
-		box-shadow: var(--shadow-sm);
-	}
-
-	.switch input:checked + .switch-slider {
-		background: var(--accent-green);
-	}
-
-	.switch input:checked + .switch-slider:before {
-		transform: translateX(20px);
-	}
-
-	.switch input:disabled + .switch-slider {
-		opacity: 0.6;
-		cursor: not-allowed;
 	}
 
 	.bot-panel {
