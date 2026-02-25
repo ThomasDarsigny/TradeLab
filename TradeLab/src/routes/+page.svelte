@@ -21,6 +21,7 @@
 	let balanceZoomLevel = $state(1);
 	let isBalanceChartPanning = $state(false);
 	let balancePanStartX: number | null = null;
+	const POSITIONS_REFRESH_MS = 5000;
 
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
@@ -293,7 +294,8 @@
 			if (
 				old.symbol !== newPos.symbol ||
 				old.quantity !== newPos.quantity ||
-				old.entry_price !== newPos.entry_price
+				old.entry_price !== newPos.entry_price ||
+				old.current_price !== newPos.current_price
 			) {
 				return true;
 			}
@@ -355,7 +357,7 @@
 
 		const positionsInterval = setInterval(() => {
 			updatePositionsData();
-		}, 30000);
+		}, POSITIONS_REFRESH_MS);
 
 		const transactionsInterval = setInterval(() => {
 			updateTransactionsData();
@@ -767,6 +769,7 @@
 						totalPerformance,
 					)}</strong
 				>
+				<small class="balance-chart-hint">Afficher l'évolution du solde</small>
 			</button>
 		</section>
 
@@ -955,6 +958,18 @@
 		color: var(--text-primary);
 		font-size: 1.4rem;
 		text-align: left;
+	}
+
+	.summary-card small {
+		color: var(--text-secondary);
+		font-size: 0.74rem;
+		line-height: 1.05;
+		text-align: left;
+		margin-top: 5px;
+	}
+
+	.gain-loss-card .balance-chart-hint {
+		margin-top: 10px;
 	}
 
 	.gain-loss-card.positive strong {

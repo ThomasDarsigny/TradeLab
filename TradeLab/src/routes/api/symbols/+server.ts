@@ -13,6 +13,11 @@ const EXCHANGES = [
 	{ code: 'SW', flag: '🇨🇭', name: 'Suisse' }
 ];
 
+const FINNHUB_ALLOWED_TYPES = new Set(['Common Stock', 'ADR', 'ETP', 'Crypto']);
+const YAHOO_ALLOWED_TYPES = new Set(['EQUITY', 'ETF', 'CRYPTO', 'CRYPTOCURRENCY']);
+
+const normalizeSearchToken = (value: string) => value.replace(/[-/\s]/g, '').toUpperCase();
+
 export const GET: RequestHandler = async ({ url }) => {
 	if (!PUBLIC_FINNHUB_API_KEY) {
 		return json({ error: 'Configuration API manquante' }, { status: 500 });
@@ -27,23 +32,36 @@ export const GET: RequestHandler = async ({ url }) => {
 			let symbols: any[] = [];
 
 			try {
-				const response = await fetch(
-					`https://finnhub.io/api/v1/search?q=${encodeURIComponent(query)}&token=${PUBLIC_FINNHUB_API_KEY}`
+				const finnhubQueries = Array.from(
+					new Set([query, normalizeSearchToken(query)].filter((token) => token.length > 0))
+				);
+				const finnhubResults = await Promise.all(
+					finnhubQueries.map(async (token) => {
+						const response = await fetch(
+							`https://finnhub.io/api/v1/search?q=${encodeURIComponent(token)}&token=${PUBLIC_FINNHUB_API_KEY}`
+						);
+
+						if (!response.ok) return [];
+						const data = await response.json();
+						return data?.result || [];
+					})
 				);
 
-				if (response.ok) {
-					const data = await response.json();
-					symbols = (data?.result || [])
-						.filter((stock: any) => stock.symbol && stock.description)
-						.filter((stock: any) => ['Common Stock', 'ADR', 'ETP'].includes(stock.type))
-						.map((stock: any) => ({
-							symbol: stock.displaySymbol ?? stock.symbol,
-							name: stock.description,
-							country: stock.country,
-							exchange: stock.exchange ?? 'Global'
-						}))
-						.slice(0, Math.min(limit, 200));
-				}
+				symbols = finnhubResults
+					.flat()
+					.filter((stock: any) => stock.symbol && stock.description)
+					.filter((stock: any) => FINNHUB_ALLOWED_TYPES.has(String(stock.type ?? '').trim()))
+					.map((stock: any) => ({
+						symbol: stock.displaySymbol ?? stock.symbol,
+						name: stock.description,
+						country: stock.country,
+						exchange: stock.exchange ?? 'Global'
+					}))
+					.filter(
+						(stock: any, index: number, arr: any[]) =>
+							arr.findIndex((item) => item.symbol === stock.symbol) === index
+					)
+					.slice(0, Math.min(limit, 200));
 			} catch (finnhubError) {
 			}
 
@@ -57,7 +75,7 @@ export const GET: RequestHandler = async ({ url }) => {
 					if (yahooResponse.ok) {
 						const yahooData = await yahooResponse.json();
 						const yahooSymbols = (yahooData?.symbols || [])
-							.filter((stock: any) => stock.type === 'EQUITY' || stock.type === 'ETF')
+							.filter((stock: any) => YAHOO_ALLOWED_TYPES.has(String(stock.type ?? '').toUpperCase()))
 							.map((stock: any) => ({
 								symbol: stock.symbol,
 								name: stock.name,

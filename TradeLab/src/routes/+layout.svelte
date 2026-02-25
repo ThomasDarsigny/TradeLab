@@ -347,6 +347,13 @@ import { page } from '$app/stores';
 		}
 	}
 
+	function handleNavClick(event: MouseEvent, path: string) {
+		event.preventDefault();
+		showProfileMenu = false;
+		showAddFundsModal = false;
+		void goto(path);
+	}
+
 	async function updateTradingBotSetting(enabled: boolean, symbols?: string) {
 		tradingBotError = null;
 		const previous = tradingBotEnabled;
@@ -414,6 +421,7 @@ import { page } from '$app/stores';
 					class="nav-item" 
 					class:active={$page.url.pathname === '/'} 
 					href="/" 
+					onclick={(event) => handleNavClick(event, '/')}
 					data-sveltekit-preload-data="hover"
 				>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -426,6 +434,7 @@ import { page } from '$app/stores';
 					class="nav-item" 
 					class:active={$page.url.pathname === '/markets'} 
 					href="/markets" 
+					onclick={(event) => handleNavClick(event, '/markets')}
 					data-sveltekit-preload-data="hover"
 				>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -437,6 +446,7 @@ import { page } from '$app/stores';
 					class="nav-item" 
 					class:active={$page.url.pathname === '/news'} 
 					href="/news" 
+					onclick={(event) => handleNavClick(event, '/news')}
 					data-sveltekit-preload-data="hover"
 				>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
