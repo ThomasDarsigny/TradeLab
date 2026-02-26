@@ -6,12 +6,62 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const TRADELAB_API_BASE_URL = process.env.TRADELAB_API_BASE_URL || 'http://127.0.0.1:5173';
 const TRADELAB_BACKEND_BASE_URL = process.env.TRADELAB_BACKEND_BASE_URL || 'http://127.0.0.1:8001';
-const BOT_INTERVAL_MS = Number(process.env.BOT_INTERVAL_MS || 5000);
+const BOT_DRIVER_INTERVAL_MS = Number(process.env.BOT_DRIVER_INTERVAL_MS || 1000);
 const BOT_RISK_PERCENT = Number(process.env.BOT_RISK_PERCENT || 0.01);
 const BOT_SYMBOLS = (process.env.BOT_SYMBOLS || 'BTC-USD')
     .split(',')
     .map((symbol) => symbol.trim().toUpperCase())
     .filter(Boolean);
+
+const toEnvNumber = (name, fallback) => {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) ? value : fallback;
+};
+
+const BOT_STRATEGY_CONFIG = {
+    scanIntervalSeconds: toEnvNumber('BOT_SCAN_INTERVAL_SECONDS', 5),
+    enableTrend: String(process.env.BOT_ENABLE_TREND ?? 'true').toLowerCase() !== 'false',
+    enableRange: String(process.env.BOT_ENABLE_RANGE ?? 'true').toLowerCase() !== 'false',
+    enableBreakout: String(process.env.BOT_ENABLE_BREAKOUT ?? 'true').toLowerCase() !== 'false',
+    trendAdxMin: toEnvNumber('BOT_TREND_ADX_MIN', 25),
+    rangeAdxMax: toEnvNumber('BOT_RANGE_ADX_MAX', 20),
+    breakoutVolumeMultiplier: toEnvNumber('BOT_BREAKOUT_VOLUME_MULTIPLIER', 1.5),
+    breakoutDonchianFactor: toEnvNumber('BOT_BREAKOUT_DONCHIAN_FACTOR', 0.99),
+    breakoutStcMin: toEnvNumber('BOT_BREAKOUT_STC_MIN', 60),
+    hardStopLossPercent: toEnvNumber('BOT_HARD_STOP_LOSS_PERCENT', 5),
+    takeProfitPercent: toEnvNumber('BOT_TAKE_PROFIT_PERCENT', 10),
+    profitZonePercent: toEnvNumber('BOT_PROFIT_ZONE_PERCENT', 0.8),
+    stcReversalPrevMin: toEnvNumber('BOT_STC_REVERSAL_PREV_MIN', 85),
+    stcReversalCurrentMax: toEnvNumber('BOT_STC_REVERSAL_CURRENT_MAX', 82),
+    smaBreakFactor: toEnvNumber('BOT_SMA_BREAK_FACTOR', 0.9),
+    rsiRangeBuyMax: toEnvNumber('BOT_RSI_RANGE_BUY_MAX', 40),
+    atrMultiplierStock: toEnvNumber('BOT_ATR_MULTIPLIER_STOCK', 2.5),
+    atrMultiplierCrypto: toEnvNumber('BOT_ATR_MULTIPLIER_CRYPTO', 3.5)
+};
+
+const normalizeStrategyConfig = (rawConfig) => {
+    const source = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    return {
+        scanIntervalSeconds: Number.isFinite(Number(source.scanIntervalSeconds)) ? Number(source.scanIntervalSeconds) : BOT_STRATEGY_CONFIG.scanIntervalSeconds,
+        enableTrend: typeof source.enableTrend === 'boolean' ? source.enableTrend : BOT_STRATEGY_CONFIG.enableTrend,
+        enableRange: typeof source.enableRange === 'boolean' ? source.enableRange : BOT_STRATEGY_CONFIG.enableRange,
+        enableBreakout: typeof source.enableBreakout === 'boolean' ? source.enableBreakout : BOT_STRATEGY_CONFIG.enableBreakout,
+        trendAdxMin: Number.isFinite(Number(source.trendAdxMin)) ? Number(source.trendAdxMin) : BOT_STRATEGY_CONFIG.trendAdxMin,
+        rangeAdxMax: Number.isFinite(Number(source.rangeAdxMax)) ? Number(source.rangeAdxMax) : BOT_STRATEGY_CONFIG.rangeAdxMax,
+        breakoutVolumeMultiplier: Number.isFinite(Number(source.breakoutVolumeMultiplier)) ? Number(source.breakoutVolumeMultiplier) : BOT_STRATEGY_CONFIG.breakoutVolumeMultiplier,
+        breakoutDonchianFactor: Number.isFinite(Number(source.breakoutDonchianFactor)) ? Number(source.breakoutDonchianFactor) : BOT_STRATEGY_CONFIG.breakoutDonchianFactor,
+        breakoutStcMin: Number.isFinite(Number(source.breakoutStcMin)) ? Number(source.breakoutStcMin) : BOT_STRATEGY_CONFIG.breakoutStcMin,
+        hardStopLossPercent: Number.isFinite(Number(source.hardStopLossPercent)) ? Number(source.hardStopLossPercent) : BOT_STRATEGY_CONFIG.hardStopLossPercent,
+        takeProfitPercent: Number.isFinite(Number(source.takeProfitPercent)) ? Number(source.takeProfitPercent) : BOT_STRATEGY_CONFIG.takeProfitPercent,
+        profitZonePercent: Number.isFinite(Number(source.profitZonePercent)) ? Number(source.profitZonePercent) : BOT_STRATEGY_CONFIG.profitZonePercent,
+        stcReversalPrevMin: Number.isFinite(Number(source.stcReversalPrevMin)) ? Number(source.stcReversalPrevMin) : BOT_STRATEGY_CONFIG.stcReversalPrevMin,
+        stcReversalCurrentMax: Number.isFinite(Number(source.stcReversalCurrentMax)) ? Number(source.stcReversalCurrentMax) : BOT_STRATEGY_CONFIG.stcReversalCurrentMax,
+        smaBreakFactor: Number.isFinite(Number(source.smaBreakFactor)) ? Number(source.smaBreakFactor) : BOT_STRATEGY_CONFIG.smaBreakFactor,
+        rsiRangeBuyMax: Number.isFinite(Number(source.rsiRangeBuyMax)) ? Number(source.rsiRangeBuyMax) : BOT_STRATEGY_CONFIG.rsiRangeBuyMax,
+        atrMultiplierStock: Number.isFinite(Number(source.atrMultiplierStock)) ? Number(source.atrMultiplierStock) : BOT_STRATEGY_CONFIG.atrMultiplierStock,
+        atrMultiplierCrypto: Number.isFinite(Number(source.atrMultiplierCrypto)) ? Number(source.atrMultiplierCrypto) : BOT_STRATEGY_CONFIG.atrMultiplierCrypto
+    };
+};
 
 // Risk Management Constants
 const HARD_STOP_LOSS_PERCENT = -0.05; // 5% hard stop-loss
@@ -35,6 +85,13 @@ const toNumber = (value) => {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const resolveScanIntervalMs = (strategyConfig) => {
+    const rawSeconds = Number(strategyConfig?.scanIntervalSeconds);
+    const safeSeconds = Number.isFinite(rawSeconds) ? rawSeconds : BOT_STRATEGY_CONFIG.scanIntervalSeconds;
+    const boundedSeconds = Math.min(300, Math.max(1, safeSeconds));
+    return Math.round(boundedSeconds * 1000);
+};
 
 /**
  * Journalise une action du bot dans `bot_actions` et écrit sur la console.
@@ -260,9 +317,11 @@ const updatePositionPrice = async (positionId, price) => {
         .eq('id', positionId);
 };
 
-const runCycleForUser = async (userId, userSymbols) => {
+const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {
     const account = await getAccount(userId);
     if (!account) return;
+
+    const effectiveStrategyConfig = normalizeStrategyConfig(userStrategyConfig);
 
     const symbols = userSymbols && userSymbols.trim() 
         ? userSymbols.split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
@@ -279,7 +338,13 @@ const runCycleForUser = async (userId, userSymbols) => {
 
         console.log(`[BOT] ${symbol}: ${candles.close.length} candlesticks reçus`);
 
-        const signal = analyzeTradingBotSignal(symbol, candles, toNumber(account.current_balance), BOT_RISK_PERCENT);
+        const signal = analyzeTradingBotSignal(
+            symbol,
+            candles,
+            toNumber(account.current_balance),
+            BOT_RISK_PERCENT,
+            effectiveStrategyConfig
+        );
         const indicators = signal.indicators || {};
         
         const price = signal.risk?.entryPrice ?? 0;
@@ -294,7 +359,7 @@ const runCycleForUser = async (userId, userSymbols) => {
 
         const position = await getOpenPosition(account.id, symbol);
         
-        const decision = makeDecision(signal, position);
+        const decision = makeDecision(signal, position, effectiveStrategyConfig);
 
         // === EXÉCUTION DE LA DÉCISION ===
         if (decision.action === 'BUY' && !position) {
@@ -339,6 +404,8 @@ const runCycleForUser = async (userId, userSymbols) => {
 };
 
 let running = false;
+const lastRunAtByUser = new Map();
+const lastLoggedIntervalByUser = new Map();
 const runCycle = async () => {
     if (running) return;
     running = true;
@@ -347,11 +414,11 @@ const runCycle = async () => {
         
         let { data, error } = await supabase
             .from('user_settings')
-            .select('user_id, bot_symbols')
+            .select('user_id, bot_symbols, strategy_config')
             .eq('trading_bot_enabled', true);
 
         if (error && error.code === '42703') {
-            console.log('[BOT] Colonne bot_symbols manquante, utilisation des symboles par défaut');
+            console.log('[BOT] Colonne bot_symbols/strategy_config manquante, utilisation des valeurs par défaut');
             const { data: fallbackData, error: fallbackError } = await supabase
                 .from('user_settings')
                 .select('user_id')
@@ -367,7 +434,8 @@ const runCycle = async () => {
             
             data = fallbackData.map(row => ({
                 user_id: row.user_id,
-                bot_symbols: 'BTC-USD'
+                bot_symbols: 'BTC-USD',
+                strategy_config: BOT_STRATEGY_CONFIG
             }));
         } else if (error || !data) {
             if (error) {
@@ -378,7 +446,8 @@ const runCycle = async () => {
         } else {
             data = data.map(row => ({
                 ...row,
-                bot_symbols: row.bot_symbols || 'BTC-USD'
+                bot_symbols: row.bot_symbols || 'BTC-USD',
+                strategy_config: normalizeStrategyConfig(row.strategy_config)
             }));
         }
 
@@ -387,7 +456,27 @@ const runCycle = async () => {
         }
 
         for (const row of data) {
-            await runCycleForUser(row.user_id, row.bot_symbols);
+            const userIntervalMs = resolveScanIntervalMs(row.strategy_config);
+            const userIntervalSeconds = Math.round(userIntervalMs / 1000);
+            const now = Date.now();
+            const lastRunAt = Number(lastRunAtByUser.get(row.user_id) || 0);
+
+            if (lastLoggedIntervalByUser.get(row.user_id) !== userIntervalSeconds) {
+                const hasCustomInterval = Number.isFinite(Number(row?.strategy_config?.scanIntervalSeconds));
+                if (hasCustomInterval) {
+                    console.log(`[BOT] User ${row.user_id}: intervalle de scan = ${userIntervalSeconds}s`);
+                } else {
+                    console.log(`[BOT] User ${row.user_id}: scanIntervalSeconds absent, fallback = ${userIntervalSeconds}s`);
+                }
+                lastLoggedIntervalByUser.set(row.user_id, userIntervalSeconds);
+            }
+
+            if (now - lastRunAt < userIntervalMs) {
+                continue;
+            }
+
+            lastRunAtByUser.set(row.user_id, now);
+            await runCycleForUser(row.user_id, row.bot_symbols, row.strategy_config);
             await sleep(200);
         }
     } catch (error) {
@@ -398,7 +487,7 @@ const runCycle = async () => {
     }
 };
 
-console.log(`[BOT] TradingBot actif. Intervalle ${BOT_INTERVAL_MS} ms`);
+console.log(`[BOT] TradingBot actif. Scheduler ${BOT_DRIVER_INTERVAL_MS} ms (intervalle utilisateur configurable)`);
 
 await runCycle();
-setInterval(runCycle, BOT_INTERVAL_MS);
+setInterval(runCycle, BOT_DRIVER_INTERVAL_MS);

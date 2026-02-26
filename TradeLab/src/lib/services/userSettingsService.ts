@@ -6,11 +6,12 @@ export interface UserSettings {
     user_id: string;
     trading_bot_enabled: boolean;
     bot_symbols?: string;
+    strategy_config?: Record<string, number | boolean> | null;
     created_at: string;
     updated_at: string;
 }
 
-export type UserSettingsUpdate = Partial<Pick<UserSettings, 'trading_bot_enabled' | 'bot_symbols'>>;
+export type UserSettingsUpdate = Partial<Pick<UserSettings, 'trading_bot_enabled' | 'bot_symbols' | 'strategy_config'>>;
 
 const getClient = (client?: SupabaseClient) => client ?? supabase;
 

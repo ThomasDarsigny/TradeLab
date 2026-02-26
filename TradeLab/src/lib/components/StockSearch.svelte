@@ -1,6 +1,6 @@
 <script lang="ts">
 	import './StockSearch.css';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	let {
 		onSelect = (symbol: string) => {}
@@ -83,18 +83,38 @@
 	}
 
 	let logoErrorSymbols = $state<Set<string>>(new Set());
+	const logoRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	let logoRetryNonce = $state(0);
 
 	function markLogoError(symbol: string) {
-		if (logoErrorSymbols.has(symbol)) return;
+		if (logoRetryTimers.has(symbol)) return;
+
 		const updated = new Set(logoErrorSymbols);
 		updated.add(symbol);
 		logoErrorSymbols = updated;
+
+		const retryTimer = setTimeout(() => {
+			const refreshed = new Set(logoErrorSymbols);
+			refreshed.delete(symbol);
+			logoErrorSymbols = refreshed;
+			logoRetryTimers.delete(symbol);
+			logoRetryNonce += 1;
+		}, 10000);
+
+		logoRetryTimers.set(symbol, retryTimer);
 	}
 
 	function getStockLogo(symbol: string): string {
 		const cleanSymbol = symbol.split('.')[0];
-		return `/api/stock/logo/${encodeURIComponent(cleanSymbol)}`;
+		return `/api/stock/logo/${encodeURIComponent(cleanSymbol)}?v=${logoRetryNonce}`;
 	}
+
+	onDestroy(() => {
+		for (const retryTimer of logoRetryTimers.values()) {
+			clearTimeout(retryTimer);
+		}
+		logoRetryTimers.clear();
+	});
 </script>
 
 <div class="search-container">

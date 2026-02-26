@@ -1,30 +1,30 @@
-
 <script lang="ts">
-import './layout.css';
-import { supabase } from '$lib/supabaseClient';
-import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
-import { setAccount, clearAccount } from '$lib/stores/account';
-import { goto, invalidateAll } from '$app/navigation';
-import { onMount } from 'svelte';
-import { page } from '$app/stores';
+	import "./layout.css";
+	import { supabase } from "$lib/supabaseClient";
+	import type { RealtimePostgresInsertPayload } from "@supabase/supabase-js";
+	import { setAccount, clearAccount } from "$lib/stores/account";
+	import { goto, invalidateAll } from "$app/navigation";
+	import { onMount } from "svelte";
+	import { page } from "$app/stores";
 
 	let { children } = $props();
 	let userEmail = $state<string | null>(null);
 	let showHeader = $derived(
-		!$page.url.pathname.startsWith('/auth') && $page.url.pathname !== '/login'
+		!$page.url.pathname.startsWith("/auth") &&
+			$page.url.pathname !== "/login",
 	);
 	let showProfileMenu = $state(false);
-	let currentTheme = $state<'default' | 'light' | 'black'>('default');
+	let currentTheme = $state<"default" | "light" | "black">("default");
 	let showAddFundsModal = $state(false);
-	let addFundsAmount = $state('');
-	let addFundsDescription = $state('');
+	let addFundsAmount = $state("");
+	let addFundsDescription = $state("");
 	let addFundsError = $state<string | null>(null);
 	let addFundsLoading = $state(false);
 	let addFundsSuccess = $state<string | null>(null);
 	let tradingBotEnabled = $state(false);
 	let tradingBotLoading = $state(false);
 	let tradingBotError = $state<string | null>(null);
-	let botSymbols = $state('BTC-USD');
+	let botSymbols = $state("BTC-USD");
 	let botSymbolsLoading = $state(false);
 	let currentUserId = $state<string | null>(null);
 	let botActions = $state<BotAction[]>([]);
@@ -44,13 +44,13 @@ import { page } from '$app/stores';
 
 	const formatBotTimestamp = (value: string) => {
 		try {
-			return new Intl.DateTimeFormat('fr-CA', {
-				hour: '2-digit',
-				minute: '2-digit',
-				second: '2-digit'
+			return new Intl.DateTimeFormat("fr-CA", {
+				hour: "2-digit",
+				minute: "2-digit",
+				second: "2-digit",
 			}).format(new Date(value));
 		} catch (error) {
-			return '';
+			return "";
 		}
 	};
 
@@ -58,15 +58,17 @@ import { page } from '$app/stores';
 		tradingBotError = null;
 		tradingBotLoading = true;
 		try {
-			const response = await fetch('/api/settings/trading-bot', { credentials: 'include' });
+			const response = await fetch("/api/settings/trading-bot", {
+				credentials: "include",
+			});
 			if (!response.ok) {
 				return;
 			}
 			const data = await response.json();
 			tradingBotEnabled = Boolean(data?.enabled);
-			botSymbols = data?.symbols || 'BTC-USD';
+			botSymbols = data?.symbols || "BTC-USD";
 		} catch (error) {
-			tradingBotError = 'Impossible de charger le statut du bot.';
+			tradingBotError = "Impossible de charger le statut du bot.";
 		} finally {
 			tradingBotLoading = false;
 		}
@@ -75,17 +77,16 @@ import { page } from '$app/stores';
 	const loadBotActions = async (userId: string) => {
 		try {
 			const { data, error } = await supabase
-				.from('bot_actions')
-				.select('*')
-				.eq('user_id', userId)
-				.order('created_at', { ascending: false })
+				.from("bot_actions")
+				.select("*")
+				.eq("user_id", userId)
+				.order("created_at", { ascending: false })
 				.limit(30);
 
 			if (!error) {
 				botActions = (data ?? []) as BotAction[];
 			}
-		} catch (error) {
-		}
+		} catch (error) {}
 	};
 
 	const subscribeBotActions = (userId: string) => {
@@ -102,27 +103,34 @@ import { page } from '$app/stores';
 		botSubscription = supabase
 			.channel(`bot-actions-${userId}`)
 			.on(
-				'postgres_changes',
+				"postgres_changes",
 				{
-					event: 'INSERT',
-					schema: 'public',
-					table: 'bot_actions',
-					filter: `user_id=eq.${userId}`
+					event: "INSERT",
+					schema: "public",
+					table: "bot_actions",
+					filter: `user_id=eq.${userId}`,
 				},
 				(payload: RealtimePostgresInsertPayload<BotAction>) => {
 					const action = payload.new as BotAction;
-					botActions = [action, ...botActions.filter((entry) => entry.id !== action.id)].slice(0, 50);
+					botActions = [
+						action,
+						...botActions.filter((entry) => entry.id !== action.id),
+					].slice(0, 50);
 					void loadBotActions(userId);
-				}
+				},
 			)
 			.subscribe((status: string) => {
 				console.log(`[Bot Actions] Subscription status: ${status}`);
-				if (status === 'SUBSCRIBED') {
+				if (status === "SUBSCRIBED") {
 					void loadBotActions(userId);
 					return;
 				}
 
-				if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+				if (
+					status === "CHANNEL_ERROR" ||
+					status === "TIMED_OUT" ||
+					status === "CLOSED"
+				) {
 					if (botSubscriptionRetryTimer || currentUserId !== userId) {
 						return;
 					}
@@ -157,7 +165,9 @@ import { page } from '$app/stores';
 
 	onMount(() => {
 		const refreshUser = async () => {
-			const { data: { user } } = await supabase.auth.getUser();
+			const {
+				data: { user },
+			} = await supabase.auth.getUser();
 			userEmail = user?.email || null;
 			currentUserId = user?.id ?? null;
 			if (user) {
@@ -171,34 +181,39 @@ import { page } from '$app/stores';
 				botActions = [];
 				stopBotActionsPolling();
 			}
-			if (!user && !$page.url.pathname.startsWith('/auth') && $page.url.pathname !== '/login') {
-				goto('/login');
+			if (
+				!user &&
+				!$page.url.pathname.startsWith("/auth") &&
+				$page.url.pathname !== "/login"
+			) {
+				goto("/login");
 			}
 		};
 
 		const refreshAccount = async () => {
 			try {
-				const response = await fetch('/api/account', { credentials: 'include' });
+				const response = await fetch("/api/account", {
+					credentials: "include",
+				});
 				if (!response.ok) return;
 				const data = await response.json();
 				if (data?.account) {
 					setAccount(data.account);
 				}
-			} catch (error) {
-			}
+			} catch (error) {}
 		};
 
 		refreshUser();
 		refreshAccount();
 
 		const {
-			data: { subscription: authSubscription }
+			data: { subscription: authSubscription },
 		} = supabase.auth.onAuthStateChange((event: string) => {
 			void refreshUser();
 			void refreshAccount();
-			if (event === 'SIGNED_OUT') {
+			if (event === "SIGNED_OUT") {
 				void invalidateAll();
-				void goto('/login', { replaceState: true });
+				void goto("/login", { replaceState: true });
 			}
 		});
 
@@ -207,19 +222,34 @@ import { page } from '$app/stores';
 			refreshAccount();
 		};
 
-		window.addEventListener('focus', handleFocus);
-		document.addEventListener('visibilitychange', handleFocus);
+		const handleTradingBotSettingsUpdated = (event: Event) => {
+			const customEvent = event as CustomEvent<{ enabled?: boolean; symbols?: string }>;
+			if (typeof customEvent.detail?.enabled === "boolean") {
+				tradingBotEnabled = customEvent.detail.enabled;
+			}
+			if (typeof customEvent.detail?.symbols === "string") {
+				botSymbols = customEvent.detail.symbols;
+			}
+			void loadTradingBotSetting();
+		};
 
-		const savedTheme = localStorage.getItem('theme') as 'default' | 'light' | 'black' || 'default';
+		window.addEventListener("focus", handleFocus);
+		document.addEventListener("visibilitychange", handleFocus);
+		window.addEventListener("trading-bot-settings-updated", handleTradingBotSettingsUpdated as EventListener);
+
+		const savedTheme =
+			(localStorage.getItem("theme") as "default" | "light" | "black") ||
+			"default";
 		currentTheme = savedTheme;
-		if (savedTheme !== 'default') {
-			document.documentElement.setAttribute('data-theme', savedTheme);
+		if (savedTheme !== "default") {
+			document.documentElement.setAttribute("data-theme", savedTheme);
 		}
 
 		return () => {
 			authSubscription.unsubscribe();
-			window.removeEventListener('focus', handleFocus);
-			document.removeEventListener('visibilitychange', handleFocus);
+			window.removeEventListener("focus", handleFocus);
+			document.removeEventListener("visibilitychange", handleFocus);
+			window.removeEventListener("trading-bot-settings-updated", handleTradingBotSettingsUpdated as EventListener);
 			if (botSubscription) {
 				supabase.removeChannel(botSubscription);
 				botSubscription = null;
@@ -233,8 +263,8 @@ import { page } from '$app/stores';
 		showAddFundsModal = false;
 		addFundsError = null;
 		addFundsSuccess = null;
-		addFundsAmount = '';
-		addFundsDescription = '';
+		addFundsAmount = "";
+		addFundsDescription = "";
 		tradingBotEnabled = false;
 		tradingBotLoading = false;
 		tradingBotError = null;
@@ -245,16 +275,22 @@ import { page } from '$app/stores';
 		}
 		stopBotActionsPolling();
 		try {
-			await fetch('/api/settings/trading-bot', {
-				method: 'PUT',
+			await fetch("/api/settings/trading-bot", {
+				method: "PUT",
 				headers: {
-					'Content-Type': 'application/json'
+					"Content-Type": "application/json",
 				},
-				credentials: 'include',
-				body: JSON.stringify({ enabled: false, symbols: botSymbols || 'BTC-USD' })
+				credentials: "include",
+				body: JSON.stringify({
+					enabled: false,
+					symbols: botSymbols || "BTC-USD",
+				}),
 			});
 		} catch (error) {
-			console.error('Impossible de désactiver le bot à la déconnexion:', error);
+			console.error(
+				"Impossible de désactiver le bot à la déconnexion:",
+				error,
+			);
 		}
 		userEmail = null;
 		currentUserId = null;
@@ -262,29 +298,29 @@ import { page } from '$app/stores';
 		localStorage.clear();
 		sessionStorage.clear();
 		await supabase.auth.signOut();
-		window.location.replace('/login');
+		window.location.replace("/login");
 	}
 
 	function toggleProfileMenu() {
 		showProfileMenu = !showProfileMenu;
 	}
 
-	function setTheme(theme: 'default' | 'light' | 'black') {
+	function setTheme(theme: "default" | "light" | "black") {
 		currentTheme = theme;
 		showProfileMenu = false;
-		if (theme === 'default') {
-			document.documentElement.removeAttribute('data-theme');
-			localStorage.setItem('theme', 'default');
+		if (theme === "default") {
+			document.documentElement.removeAttribute("data-theme");
+			localStorage.setItem("theme", "default");
 		} else {
-			document.documentElement.setAttribute('data-theme', theme);
-			localStorage.setItem('theme', theme);
+			document.documentElement.setAttribute("data-theme", theme);
+			localStorage.setItem("theme", theme);
 		}
 	}
 
 	function handleAddFunds() {
 		showProfileMenu = false;
-		addFundsAmount = '';
-		addFundsDescription = '';
+		addFundsAmount = "";
+		addFundsDescription = "";
 		addFundsError = null;
 		addFundsSuccess = null;
 		showAddFundsModal = true;
@@ -302,39 +338,39 @@ import { page } from '$app/stores';
 
 		const parsedAmount = Number.parseFloat(addFundsAmount);
 		if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-			addFundsError = 'Veuillez entrer un montant valide.';
+			addFundsError = "Veuillez entrer un montant valide.";
 			return;
 		}
 
 		addFundsLoading = true;
 		try {
-			const response = await fetch('/api/account/deposit', {
-				method: 'POST',
+			const response = await fetch("/api/account/deposit", {
+				method: "POST",
 				headers: {
-					'Content-Type': 'application/json',
+					"Content-Type": "application/json",
 				},
-				credentials: 'include',
+				credentials: "include",
 				body: JSON.stringify({
 					amount: parsedAmount,
-					description: addFundsDescription || 'Depot',
+					description: addFundsDescription || "Depot",
 				}),
 			});
 
 			const data = await response.json();
 			if (!response.ok) {
-				addFundsError = data?.error || 'Erreur lors du depot.';
+				addFundsError = data?.error || "Erreur lors du depot.";
 				return;
 			}
 
-			addFundsSuccess = 'Fonds ajoutes avec succes.';
-			addFundsAmount = '';
-			addFundsDescription = '';
+			addFundsSuccess = "Fonds ajoutes avec succes.";
+			addFundsAmount = "";
+			addFundsDescription = "";
 			if (data?.account) {
 				setAccount(data.account);
-				window.dispatchEvent(new CustomEvent('account-updated'));
+				window.dispatchEvent(new CustomEvent("account-updated"));
 			}
 		} catch (error) {
-			addFundsError = 'Erreur reseau. Veuillez reessayer.';
+			addFundsError = "Erreur reseau. Veuillez reessayer.";
 		} finally {
 			addFundsLoading = false;
 		}
@@ -342,7 +378,7 @@ import { page } from '$app/stores';
 
 	function handleClickOutside(event: MouseEvent) {
 		const target = event.target as HTMLElement;
-		if (!target.closest('.profile-dropdown')) {
+		if (!target.closest(".profile-dropdown")) {
 			showProfileMenu = false;
 		}
 	}
@@ -353,7 +389,6 @@ import { page } from '$app/stores';
 		showAddFundsModal = false;
 		void goto(path);
 	}
-
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -362,150 +397,337 @@ import { page } from '$app/stores';
 	{#if showHeader}
 		<header class="app-header">
 			<a href="/" class="brand">
-				<img src="/logo.png" alt="TradeLab Logo" class="logo" style="width: 60px; height: 60px;" />
+				<img
+					src="/logo.png"
+					alt="TradeLab Logo"
+					class="logo"
+					style="width: 60px; height: 60px;"
+				/>
 				<span>TradeLab</span>
 			</a>
 			<nav class="nav" aria-label="Navigation principale">
-				<a 
-					class="nav-item" 
-					class:active={$page.url.pathname === '/'} 
-					href="/" 
-					onclick={(event) => handleNavClick(event, '/')}
+				<a
+					class="nav-item"
+					class:active={$page.url.pathname === "/"}
+					href="/"
+					onclick={(event) => handleNavClick(event, "/")}
 					data-sveltekit-preload-data="hover"
 				>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+						></path>
 						<polyline points="9 22 9 12 15 12 15 22"></polyline>
 					</svg>
 					Portefeuille
 				</a>
-				<a 
-					class="nav-item" 
-					class:active={$page.url.pathname === '/markets'} 
-					href="/markets" 
-					onclick={(event) => handleNavClick(event, '/markets')}
+				<a
+					class="nav-item"
+					class:active={$page.url.pathname === "/markets"}
+					href="/markets"
+					onclick={(event) => handleNavClick(event, "/markets")}
 					data-sveltekit-preload-data="hover"
 				>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"
+						></polyline>
 					</svg>
 					Marchés
 				</a>
-				<a 
-					class="nav-item" 
-					class:active={$page.url.pathname === '/news'} 
-					href="/news" 
-					onclick={(event) => handleNavClick(event, '/news')}
+				<a
+					class="nav-item"
+					class:active={$page.url.pathname === "/news"}
+					href="/news"
+					onclick={(event) => handleNavClick(event, "/news")}
 					data-sveltekit-preload-data="hover"
 				>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+					<svg
+						width="18"
+						height="18"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path
+							d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"
+						></path>
 					</svg>
 					Actualités
 				</a>
-				<a 
-					class="nav-item" 
-					class:active={$page.url.pathname.startsWith('/trading-bot')} 
-					href="/trading-bot" 
-					onclick={(event) => handleNavClick(event, '/trading-bot')}
+				<a
+					class="nav-item"
+					class:active={$page.url.pathname.startsWith("/trading-bot")}
+					href="/trading-bot"
+					onclick={(event) => handleNavClick(event, "/trading-bot")}
 					data-sveltekit-preload-data="hover"
 				>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<polyline points="4 14 9 9 13 13 20 6"></polyline>
-						<polyline points="20 12 20 6 14 6"></polyline>
-					</svg>
+					<svg 
+  class="trading-bot"
+	class:bot-active={tradingBotEnabled}
+  width="18" 
+  height="18" 
+  viewBox="0 0 24 24" 
+  fill="none" 
+  stroke="currentColor" 
+  stroke-width="2" 
+  stroke-linecap="round" 
+  stroke-linejoin="round"
+>
+  <path class="antenne" d="M12 8V4M8 4h8" />
+  
+  <rect x="5" y="8" width="14" height="12" rx="2" />
+  
+  <circle class="oeil" cx="9" cy="12" r="0.5" fill="currentColor" />
+  <circle class="oeil" cx="15" cy="12" r="0.5" fill="currentColor" />
+  
+  <path class="graph-line" d="M8 17l2-2 2 2 4-4" />
+</svg>
+
 					Trading Bot
 				</a>
 				<div class="profile-dropdown">
-					<button class="profile-icon-btn" onclick={toggleProfileMenu} aria-label="Menu profil">
-						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<button
+						class="profile-icon-btn"
+						onclick={toggleProfileMenu}
+						aria-label="Menu profil"
+					>
+						<svg
+							width="32"
+							height="32"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
 							<circle cx="12" cy="8" r="4"></circle>
-							<path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path>
+							<path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"
+							></path>
 						</svg>
 					</button>
-					
+
 					{#if showProfileMenu}
-							<div class="profile-menu">
-								<div class="profile-menu-header">
-									<div class="profile-avatar">
-										<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<circle cx="12" cy="8" r="4"></circle>
-											<path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"></path>
-										</svg>
-									</div>
-									<div class="profile-email">{userEmail}</div>
+						<div class="profile-menu">
+							<div class="profile-menu-header">
+								<div class="profile-avatar">
+									<svg
+										width="40"
+										height="40"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<circle cx="12" cy="8" r="4"></circle>
+										<path
+											d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"
+										></path>
+									</svg>
 								</div>
-								
-								<div class="profile-menu-divider"></div>
-								
-								<button class="profile-menu-item" onclick={handleAddFunds}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<circle cx="12" cy="12" r="10"></circle>
-										<line x1="12" y1="8" x2="12" y2="16"></line>
-										<line x1="8" y1="12" x2="16" y2="12"></line>
-									</svg>
-									<span>Ajouter des fonds</span>
-								</button>
-								
-								<div class="profile-menu-divider"></div>
-								<div class="theme-section-title">Thèmes</div>
-								<button class="profile-menu-item" class:active={currentTheme === 'default'} onclick={() => setTheme('default')}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path>
-										<path d="M6.5 6.5l.6 1.2 1.4.2-1 .9.2 1.4-1.2-.6-1.2.6.2-1.4-1-.9 1.4-.2.6-1.2z"></path>
-									</svg>
-									<span>Défaut (Bleu foncé)</span>
-									{#if currentTheme === 'default'}
-										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-											<polyline points="20 6 9 17 4 12"></polyline>
-										</svg>
-									{/if}
-								</button>
-								
-								<button class="profile-menu-item" class:active={currentTheme === 'light'} onclick={() => setTheme('light')}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<circle cx="12" cy="12" r="5"></circle>
-										<line x1="12" y1="1" x2="12" y2="3"></line>
-										<line x1="12" y1="21" x2="12" y2="23"></line>
-										<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-										<line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-										<line x1="1" y1="12" x2="3" y2="12"></line>
-										<line x1="21" y1="12" x2="23" y2="12"></line>
-										<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-										<line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-									</svg>
-									<span>Mode clair</span>
-									{#if currentTheme === 'light'}
-										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-											<polyline points="20 6 9 17 4 12"></polyline>
-										</svg>
-									{/if}
-								</button>
-								
-								<button class="profile-menu-item" class:active={currentTheme === 'black'} onclick={() => setTheme('black')}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<rect x="4" y="4" width="16" height="16" rx="3" ry="3" fill="currentColor" stroke="none"></rect>
-									</svg>
-									<span>Mode noir</span>
-									{#if currentTheme === 'black'}
-										<svg class="check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-											<polyline points="20 6 9 17 4 12"></polyline>
-										</svg>
-									{/if}
-								</button>
-								
-								<div class="profile-menu-divider"></div>
-								
-								<button class="profile-menu-item danger" onclick={handleLogout}>
-									<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-										<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-										<polyline points="16 17 21 12 16 7"></polyline>
-										<line x1="21" y1="12" x2="9" y2="12"></line>
-									</svg>
-									<span>Déconnexion</span>
-								</button>
+								<div class="profile-email">{userEmail}</div>
 							</div>
-						{/if}
+
+							<div class="profile-menu-divider"></div>
+
+							<button
+								class="profile-menu-item"
+								onclick={handleAddFunds}
+							>
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<circle cx="12" cy="12" r="10"></circle>
+									<line x1="12" y1="8" x2="12" y2="16"></line>
+									<line x1="8" y1="12" x2="16" y2="12"></line>
+								</svg>
+								<span>Ajouter des fonds</span>
+							</button>
+
+							<div class="profile-menu-divider"></div>
+							<div class="theme-section-title">Thèmes</div>
+							<button
+								class="profile-menu-item"
+								class:active={currentTheme === "default"}
+								onclick={() => setTheme("default")}
+							>
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<path
+										d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"
+									></path>
+									<path
+										d="M6.5 6.5l.6 1.2 1.4.2-1 .9.2 1.4-1.2-.6-1.2.6.2-1.4-1-.9 1.4-.2.6-1.2z"
+									></path>
+								</svg>
+								<span>Défaut (Bleu foncé)</span>
+								{#if currentTheme === "default"}
+									<svg
+										class="check-icon"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="3"
+									>
+										<polyline points="20 6 9 17 4 12"
+										></polyline>
+									</svg>
+								{/if}
+							</button>
+
+							<button
+								class="profile-menu-item"
+								class:active={currentTheme === "light"}
+								onclick={() => setTheme("light")}
+							>
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<circle cx="12" cy="12" r="5"></circle>
+									<line x1="12" y1="1" x2="12" y2="3"></line>
+									<line x1="12" y1="21" x2="12" y2="23"
+									></line>
+									<line
+										x1="4.22"
+										y1="4.22"
+										x2="5.64"
+										y2="5.64"
+									></line>
+									<line
+										x1="18.36"
+										y1="18.36"
+										x2="19.78"
+										y2="19.78"
+									></line>
+									<line x1="1" y1="12" x2="3" y2="12"></line>
+									<line x1="21" y1="12" x2="23" y2="12"
+									></line>
+									<line
+										x1="4.22"
+										y1="19.78"
+										x2="5.64"
+										y2="18.36"
+									></line>
+									<line
+										x1="18.36"
+										y1="5.64"
+										x2="19.78"
+										y2="4.22"
+									></line>
+								</svg>
+								<span>Mode clair</span>
+								{#if currentTheme === "light"}
+									<svg
+										class="check-icon"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="3"
+									>
+										<polyline points="20 6 9 17 4 12"
+										></polyline>
+									</svg>
+								{/if}
+							</button>
+
+							<button
+								class="profile-menu-item"
+								class:active={currentTheme === "black"}
+								onclick={() => setTheme("black")}
+							>
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<rect
+										x="4"
+										y="4"
+										width="16"
+										height="16"
+										rx="3"
+										ry="3"
+										fill="currentColor"
+										stroke="none"
+									></rect>
+								</svg>
+								<span>Mode noir</span>
+								{#if currentTheme === "black"}
+									<svg
+										class="check-icon"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="3"
+									>
+										<polyline points="20 6 9 17 4 12"
+										></polyline>
+									</svg>
+								{/if}
+							</button>
+
+							<div class="profile-menu-divider"></div>
+
+							<button
+								class="profile-menu-item danger"
+								onclick={handleLogout}
+							>
+								<svg
+									width="20"
+									height="20"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+								>
+									<path
+										d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+									></path>
+									<polyline points="16 17 21 12 16 7"
+									></polyline>
+									<line x1="21" y1="12" x2="9" y2="12"></line>
+								</svg>
+								<span>Déconnexion</span>
+							</button>
+						</div>
+					{/if}
 				</div>
 			</nav>
 		</header>
@@ -528,23 +750,33 @@ import { page } from '$app/stores';
 					onclick={() => (botPanelOpen = !botPanelOpen)}
 					aria-expanded={botPanelOpen}
 				>
-					{botPanelOpen ? 'Replier' : 'Ouvrir'}
+					{botPanelOpen ? "Replier" : "Ouvrir"}
 				</button>
 			</div>
 			{#if botPanelOpen}
 				<div class="bot-panel-body">
 					{#if botActions.length === 0}
-						<div class="bot-panel-empty">Aucune action pour le moment.</div>
+						<div class="bot-panel-empty">
+							Aucune action pour le moment.
+						</div>
 					{:else}
 						<ul class="bot-panel-list">
 							{#each botActions as action (action.id)}
 								<li class="bot-panel-item">
 									<div class="bot-panel-line">
-										<span class="bot-panel-time">{formatBotTimestamp(action.created_at)}</span>
-										<span class="bot-panel-message">{action.message}</span>
+										<span class="bot-panel-time"
+											>{formatBotTimestamp(
+												action.created_at,
+											)}</span
+										>
+										<span class="bot-panel-message"
+											>{action.message}</span
+										>
 									</div>
 									{#if action.symbol}
-										<div class="bot-panel-symbol">{action.symbol}</div>
+										<div class="bot-panel-symbol">
+											{action.symbol}
+										</div>
 									{/if}
 								</li>
 							{/each}
@@ -556,7 +788,11 @@ import { page } from '$app/stores';
 	{/if}
 
 	{#if showAddFundsModal}
-		<div class="modal-backdrop" role="presentation" onclick={closeAddFundsModal}>
+		<div
+			class="modal-backdrop"
+			role="presentation"
+			onclick={closeAddFundsModal}
+		>
 			<div
 				class="modal-card"
 				role="dialog"
@@ -568,8 +804,19 @@ import { page } from '$app/stores';
 			>
 				<div class="modal-header">
 					<h3>Ajouter des fonds</h3>
-					<button class="modal-close" onclick={closeAddFundsModal} aria-label="Fermer">
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<button
+						class="modal-close"
+						onclick={closeAddFundsModal}
+						aria-label="Fermer"
+					>
+						<svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
 							<line x1="18" y1="6" x2="6" y2="18"></line>
 							<line x1="6" y1="6" x2="18" y2="18"></line>
 						</svg>
@@ -583,7 +830,9 @@ import { page } from '$app/stores';
 						submitAddFunds();
 					}}
 				>
-					<label class="modal-label" for="deposit-amount">Montant</label>
+					<label class="modal-label" for="deposit-amount"
+						>Montant</label
+					>
 					<input
 						id="deposit-amount"
 						class="modal-input"
@@ -599,13 +848,23 @@ import { page } from '$app/stores';
 						<div class="modal-message error">{addFundsError}</div>
 					{/if}
 					{#if addFundsSuccess}
-						<div class="modal-message success">{addFundsSuccess}</div>
+						<div class="modal-message success">
+							{addFundsSuccess}
+						</div>
 					{/if}
 
 					<div class="modal-actions">
-						<button class="btn-secondary" type="button" onclick={closeAddFundsModal}>Annuler</button>
-						<button class="btn-primary" type="submit" disabled={addFundsLoading}>
-							{addFundsLoading ? 'Ajout en cours...' : 'Ajouter'}
+						<button
+							class="btn-secondary"
+							type="button"
+							onclick={closeAddFundsModal}>Annuler</button
+						>
+						<button
+							class="btn-primary"
+							type="submit"
+							disabled={addFundsLoading}
+						>
+							{addFundsLoading ? "Ajout en cours..." : "Ajouter"}
 						</button>
 					</div>
 				</form>
@@ -746,11 +1005,16 @@ import { page } from '$app/stores';
 		bottom: 1.5rem;
 		width: 310px;
 		max-width: calc(100% - 3rem);
-		background: linear-gradient(135deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), 0.95));
+		background: linear-gradient(
+			135deg,
+			var(--bg-secondary),
+			rgba(var(--bg-secondary-rgb), 0.95)
+		);
 		border: 1px solid rgba(59, 130, 246, 0.15);
 		border-radius: 16px;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
-					inset 0 0 1px rgba(59, 130, 246, 0.1);
+		box-shadow:
+			0 25px 50px -12px rgba(0, 0, 0, 0.5),
+			inset 0 0 1px rgba(59, 130, 246, 0.1);
 		z-index: 900;
 		overflow: hidden;
 		backdrop-filter: blur(10px);
@@ -764,7 +1028,11 @@ import { page } from '$app/stores';
 		gap: 1rem;
 		padding: 1rem 1.25rem;
 		border-bottom: 1px solid rgba(59, 130, 246, 0.1);
-		background: linear-gradient(90deg, rgba(59, 130, 246, 0.1), transparent);
+		background: linear-gradient(
+			90deg,
+			rgba(59, 130, 246, 0.1),
+			transparent
+		);
 	}
 
 	.bot-panel-header strong {
@@ -995,4 +1263,34 @@ import { page } from '$app/stores';
 	main.full-page {
 		padding: 0;
 	}
+
+.trading-bot.bot-active .antenne {
+  transform-origin: bottom;
+  animation: scan 2s ease-in-out infinite;
+}
+
+.trading-bot.bot-active .graph-line {
+  stroke-dasharray: 20;
+  animation: flow 1.5s linear infinite;
+}
+
+.trading-bot.bot-active .oeil {
+  animation: blink 3s step-end infinite;
+}
+
+@keyframes scan {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+@keyframes flow {
+  0% { stroke-dashoffset: 20; opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0.5; }
+}
+
+@keyframes blink {
+  0%, 90%, 100% { opacity: 1; }
+  95% { opacity: 0; }
+}
 </style>

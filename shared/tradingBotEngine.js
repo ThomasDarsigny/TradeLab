@@ -78,6 +78,92 @@ const sma = (values, period) => {
  */
 
 /**
+ * @typedef {Object} TradingBotStrategyConfig
+ * @property {boolean} [enableTrend]
+ * @property {boolean} [enableRange]
+ * @property {boolean} [enableBreakout]
+ * @property {number} [trendAdxMin]
+ * @property {number} [rangeAdxMax]
+ * @property {number} [breakoutVolumeMultiplier]
+ * @property {number} [breakoutDonchianFactor]
+ * @property {number} [breakoutStcMin]
+ * @property {number} [hardStopLossPercent]
+ * @property {number} [takeProfitPercent]
+ * @property {number} [profitZonePercent]
+ * @property {number} [profitBuffer]
+ * @property {number} [stcReversalPrevMin]
+ * @property {number} [stcReversalCurrentMax]
+ * @property {number} [smaBreakFactor]
+ * @property {number} [rsiRangeBuyMax]
+ * @property {number} [atrMultiplierStock]
+ * @property {number} [atrMultiplierCrypto]
+ */
+
+const DEFAULT_STRATEGY_CONFIG = {
+    enableTrend: true,
+    enableRange: true,
+    enableBreakout: true,
+    trendAdxMin: 25,
+    rangeAdxMax: 20,
+    breakoutVolumeMultiplier: 1.5,
+    breakoutDonchianFactor: 0.99,
+    breakoutStcMin: 60,
+    hardStopLossPercent: 5,
+    takeProfitPercent: 10,
+    profitZonePercent: 0.8,
+    stcReversalPrevMin: 85,
+    stcReversalCurrentMax: 82,
+    smaBreakFactor: 0.9,
+    rsiRangeBuyMax: 40,
+    atrMultiplierStock: 2.5,
+    atrMultiplierCrypto: 3.5
+};
+
+/**
+ * @param {TradingBotStrategyConfig | undefined} config
+ */
+const normalizeStrategyConfig = (config) => {
+    const raw = config || {};
+    return {
+        enableTrend: typeof raw.enableTrend === 'boolean' ? raw.enableTrend : DEFAULT_STRATEGY_CONFIG.enableTrend,
+        enableRange: typeof raw.enableRange === 'boolean' ? raw.enableRange : DEFAULT_STRATEGY_CONFIG.enableRange,
+        enableBreakout: typeof raw.enableBreakout === 'boolean' ? raw.enableBreakout : DEFAULT_STRATEGY_CONFIG.enableBreakout,
+        trendAdxMin: Number.isFinite(Number(raw.trendAdxMin)) ? Number(raw.trendAdxMin) : DEFAULT_STRATEGY_CONFIG.trendAdxMin,
+        rangeAdxMax: Number.isFinite(Number(raw.rangeAdxMax)) ? Number(raw.rangeAdxMax) : DEFAULT_STRATEGY_CONFIG.rangeAdxMax,
+        breakoutVolumeMultiplier: Number.isFinite(Number(raw.breakoutVolumeMultiplier))
+            ? Number(raw.breakoutVolumeMultiplier)
+            : DEFAULT_STRATEGY_CONFIG.breakoutVolumeMultiplier,
+        breakoutDonchianFactor: Number.isFinite(Number(raw.breakoutDonchianFactor))
+            ? Number(raw.breakoutDonchianFactor)
+            : DEFAULT_STRATEGY_CONFIG.breakoutDonchianFactor,
+        breakoutStcMin: Number.isFinite(Number(raw.breakoutStcMin)) ? Number(raw.breakoutStcMin) : DEFAULT_STRATEGY_CONFIG.breakoutStcMin,
+        hardStopLossPercent: Number.isFinite(Number(raw.hardStopLossPercent))
+            ? Number(raw.hardStopLossPercent)
+            : DEFAULT_STRATEGY_CONFIG.hardStopLossPercent,
+        takeProfitPercent: Number.isFinite(Number(raw.takeProfitPercent))
+            ? Number(raw.takeProfitPercent)
+            : DEFAULT_STRATEGY_CONFIG.takeProfitPercent,
+        profitZonePercent: Number.isFinite(Number(raw.profitZonePercent))
+            ? Number(raw.profitZonePercent)
+            : DEFAULT_STRATEGY_CONFIG.profitZonePercent,
+        stcReversalPrevMin: Number.isFinite(Number(raw.stcReversalPrevMin))
+            ? Number(raw.stcReversalPrevMin)
+            : DEFAULT_STRATEGY_CONFIG.stcReversalPrevMin,
+        stcReversalCurrentMax: Number.isFinite(Number(raw.stcReversalCurrentMax))
+            ? Number(raw.stcReversalCurrentMax)
+            : DEFAULT_STRATEGY_CONFIG.stcReversalCurrentMax,
+        smaBreakFactor: Number.isFinite(Number(raw.smaBreakFactor)) ? Number(raw.smaBreakFactor) : DEFAULT_STRATEGY_CONFIG.smaBreakFactor,
+        rsiRangeBuyMax: Number.isFinite(Number(raw.rsiRangeBuyMax)) ? Number(raw.rsiRangeBuyMax) : DEFAULT_STRATEGY_CONFIG.rsiRangeBuyMax,
+        atrMultiplierStock: Number.isFinite(Number(raw.atrMultiplierStock))
+            ? Number(raw.atrMultiplierStock)
+            : DEFAULT_STRATEGY_CONFIG.atrMultiplierStock,
+        atrMultiplierCrypto: Number.isFinite(Number(raw.atrMultiplierCrypto))
+            ? Number(raw.atrMultiplierCrypto)
+            : DEFAULT_STRATEGY_CONFIG.atrMultiplierCrypto
+    };
+};
+
+/**
  * @param {unknown} value
  * @returns {number|undefined}
  */
@@ -334,16 +420,47 @@ const stc = (close) => {
 /**
  * Calcule le multiplicateur ATR dynamique selon le type d'actif
  * @param {string} symbol
+ * @param {{ atrMultiplierCrypto: number, atrMultiplierStock: number }} strategyConfig
  * @returns {number}
  */
-function getAtrMultiplier(symbol) {
+function getAtrMultiplier(symbol, strategyConfig) {
     const isCrypto = symbol.toUpperCase().includes('-USD') || 
                      symbol.toUpperCase().includes('-BTC') || 
                      symbol.toUpperCase().includes('-USDT') ||
                      symbol.toUpperCase().includes('ETH') ||
                      symbol.toUpperCase().includes('BTC');
     
-    return isCrypto ? 3.5 : 2.5;
+    return isCrypto ? strategyConfig.atrMultiplierCrypto : strategyConfig.atrMultiplierStock;
+}
+
+/**
+ * Calcule une taille de position avec plafonnement strict à 15% du capital
+ * @param {number} capital
+ * @param {number} riskPercent
+ * @param {number} price
+ * @param {number} [stopDistance]
+ * @returns {number}
+ */
+export function calculatePositionSize(capital, riskPercent, price, stopDistance) {
+    const safeCapital = Number(capital);
+    const safeRiskPercent = Number(riskPercent);
+    const safePrice = Number(price);
+    const safeStopDistance = Number(stopDistance);
+
+    if (!Number.isFinite(safeCapital) || safeCapital <= 0) return 0;
+    if (!Number.isFinite(safeRiskPercent) || safeRiskPercent <= 0) return 0;
+    if (!Number.isFinite(safePrice) || safePrice <= 0) return 0;
+
+    const riskAmount = safeCapital * safeRiskPercent;
+    const rawSize = Number.isFinite(safeStopDistance) && safeStopDistance > 0
+        ? riskAmount / safeStopDistance
+        : riskAmount / safePrice;
+
+    if (!Number.isFinite(rawSize) || rawSize <= 0) return 0;
+
+    const maxAllocationAmount = safeCapital * 0.15;
+    const maxQty = maxAllocationAmount / safePrice;
+    return Math.min(rawSize, maxQty);
 }
 
 /**
@@ -351,9 +468,11 @@ function getAtrMultiplier(symbol) {
  * @param {CandleSeries} candles
  * @param {number} capital
  * @param {number} riskPercent
+ * @param {TradingBotStrategyConfig} [config]
  * @returns {TradingBotSignal}
  */
-export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
+export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent, config) {
+    const strategyConfig = normalizeStrategyConfig(config);
     const periodAdx = 14;
     const periodAtr = 14;
     const periodRsi = 14;
@@ -433,26 +552,25 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
     /** @type {'neutral'|'trend'|'range'} */
     let regime = 'neutral';
     if (adxValue !== undefined) {
-        if (adxValue > 25) regime = 'trend';
-        else if (adxValue < 20) regime = 'range';
+        if (adxValue > strategyConfig.trendAdxMin) regime = 'trend';
+        else if (adxValue < strategyConfig.rangeAdxMax) regime = 'range';
     }
 
     const breakoutVigilance =
         volumeAvg !== undefined && lastVolume !== undefined
-            ? lastVolume > volumeAvg * 1.5
+            ? lastVolume > volumeAvg * strategyConfig.breakoutVolumeMultiplier
             : false;
 
     const entryPrice = safeNumber(lastClose);
-    const atrMultiplier = getAtrMultiplier(symbol);
+    const atrMultiplier = getAtrMultiplier(symbol, strategyConfig);
     const stopLoss = entryPrice !== undefined && atrValue !== undefined
         ? entryPrice - atrMultiplier * atrValue
         : undefined;
 
     const safeRiskPercent = Number.isFinite(riskPercent) ? riskPercent : 0.01;
-    const riskAmount = entryPrice !== undefined ? capital * safeRiskPercent : undefined;
     const positionSize =
-        entryPrice !== undefined && stopLoss !== undefined && riskAmount !== undefined && entryPrice > stopLoss
-            ? riskAmount / (entryPrice - stopLoss)
+        entryPrice !== undefined && stopLoss !== undefined && entryPrice > stopLoss
+            ? calculatePositionSize(capital, safeRiskPercent, entryPrice, entryPrice - stopLoss)
             : undefined;
 
     /** @type {'none'|'ema'|'atr'} */
@@ -511,9 +629,11 @@ export function analyzeTradingBotSignal(symbol, candles, capital, riskPercent) {
  * Prend une décision ferme d'achat/vente basée sur les signaux et une position ouverte
  * @param {any} signal 
  * @param {any|null} position
+ * @param {TradingBotStrategyConfig} [config]
  * @returns {{action: 'BUY'|'SELL'|'HOLD', reason?: string, strategy?: string, price?: number, stopLoss?: number}}
  */
-export function makeDecision(signal, position) {
+export function makeDecision(signal, position, config) {
+    const strategyConfig = normalizeStrategyConfig(config);
     if (!signal || typeof signal !== 'object') return { action: 'HOLD', reason: 'No signal' };
     const lastClose = signal.risk && typeof signal.risk === 'object' ? signal.risk.entryPrice : undefined;
     const indicators = signal.indicators && typeof signal.indicators === 'object' ? signal.indicators : {};
@@ -530,19 +650,35 @@ export function makeDecision(signal, position) {
     if (position && typeof position === 'object') {
         const entryPrice = Number(position.entry_price);
         const rawPnlPercent = (lastClose - entryPrice) / entryPrice;
+        const hardStopLossPercent = strategyConfig.hardStopLossPercent / 100;
+        const takeProfitPercent = strategyConfig.takeProfitPercent / 100;
+        const rawProfitBuffer = config && Number.isFinite(Number(config.profitBuffer))
+            ? Number(config.profitBuffer)
+            : undefined;
+        const profitZonePercent = rawProfitBuffer !== undefined
+            ? (rawProfitBuffer > 1 ? rawProfitBuffer / 100 : rawProfitBuffer)
+            : strategyConfig.profitZonePercent / 100;
 
         // 1. HARD STOP-LOSS (-5%) : Priorité absolue
-        if (rawPnlPercent < -0.05) {
+        if (rawPnlPercent < -hardStopLossPercent) {
             return { action: 'SELL', reason: 'STOP_LOSS_HARD', price: lastClose };
         }
 
-        if (rawPnlPercent > 0.10) {
+        if (rawPnlPercent > takeProfitPercent) {
             return { action: 'SELL', reason: 'TAKE_PROFIT', price: lastClose };
         }
 
-        const isInProfitZone = rawPnlPercent > 0.008;
+        const isInProfitZone = rawPnlPercent > profitZonePercent;
 
-        if (isInProfitZone && stcPrev !== undefined && stcCurrent !== undefined && stcPrev > 85 && stcCurrent < 82) {
+        if (
+            isInProfitZone &&
+            stcPrev !== undefined &&
+            stcCurrent !== undefined &&
+            (
+                (stcPrev > strategyConfig.stcReversalPrevMin && stcCurrent < strategyConfig.stcReversalCurrentMax) ||
+                (stcCurrent < stcPrev && stcCurrent >= 80)
+            )
+        ) {
             return { action: 'SELL', reason: 'STC_REVERSAL_TOP', price: lastClose };
         }
 
@@ -558,7 +694,7 @@ export function makeDecision(signal, position) {
             }
         }
 
-        if (isInProfitZone && indicators.sma20 !== undefined && lastClose < indicators.sma20 * 0.90) {
+        if (isInProfitZone && indicators.sma20 !== undefined && lastClose < indicators.sma20 * strategyConfig.smaBreakFactor) {
             return { action: 'SELL', reason: 'SMA20_BREAK', price: lastClose };
         }
 
@@ -573,7 +709,8 @@ export function makeDecision(signal, position) {
     const rsi = indicators.rsi;
     const atr = indicators.atr;
 
-    if (adx !== undefined && adx > 25 &&
+    if (strategyConfig.enableTrend &&
+        adx !== undefined && adx > strategyConfig.trendAdxMin &&
         ema50 !== undefined && ema200 !== undefined && ema50 > ema200 &&
         sma20 !== undefined && lastClose > sma20) {
         const stopLoss = atr !== undefined ? lastClose - (atr * 3) : lastClose * 0.95;
@@ -586,8 +723,9 @@ export function makeDecision(signal, position) {
         };
     }
 
-    if (adx !== undefined && adx < 20 &&
-        rsi !== undefined && rsi < 40 &&
+    if (strategyConfig.enableRange &&
+        adx !== undefined && adx < strategyConfig.rangeAdxMax &&
+        rsi !== undefined && rsi < strategyConfig.rsiRangeBuyMax &&
         ema50 !== undefined && lastClose > ema50) {
         const stopLoss = atr !== undefined ? lastClose - (atr * 2.5) : lastClose * 0.93;
         return {
@@ -599,11 +737,12 @@ export function makeDecision(signal, position) {
         };
     }
 
-    if (signal && signal.breakoutVigilance &&
+    if (strategyConfig.enableBreakout &&
+        signal && signal.breakoutVigilance &&
         indicators.donchianUpper !== undefined &&
-        lastClose >= indicators.donchianUpper * 0.99 &&
+        lastClose >= indicators.donchianUpper * strategyConfig.breakoutDonchianFactor &&
         indicators.stc !== undefined &&
-        indicators.stc > 60) {
+        indicators.stc > strategyConfig.breakoutStcMin) {
         const stopLoss = atr !== undefined ? lastClose - (atr * 2) : lastClose * 0.94;
         return {
             action: 'BUY',

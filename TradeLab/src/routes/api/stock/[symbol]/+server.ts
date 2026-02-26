@@ -129,17 +129,12 @@ export const GET: RequestHandler = async ({ params }) => {
 		}
 
 		const cleanSymbol = symbol.toUpperCase().split('.')[0];
-		const webDomain = profileData.weburl
-			? profileData.weburl.replace('https://', '').replace('http://', '')
-			: '';
-		const fallbackLogo = webDomain
-			? `https://logo.clearbit.com/${webDomain}`
-			: `https://storage.googleapis.com/iexcloud-hl37opg/api/logos/${cleanSymbol}.png`;
+		const stableLogoUrl = `/api/stock/logo/${encodeURIComponent(cleanSymbol)}`;
 
 		const stockData = {
 			symbol: symbol.toUpperCase(),
 			name: profileData.name || `${symbol.toUpperCase()} Inc.`,
-			logo: profileData.logo || fallbackLogo,
+			logo: stableLogoUrl,
 			price: quoteData.c || 0,
 			change: quoteData.d || 0,
 			changePercent: quoteData.dp || 0,

@@ -21,12 +21,12 @@ const CRYPTO_LOGO_MAP: Record<string, string> = {
 
 const CRYPTO_QUOTES = new Set(['USD', 'USDT', 'USDC', 'BTC', 'ETH', 'EUR', 'CAD']);
 
-const withCacheHeaders = (location: URL | string) => {
+const withCacheHeaders = (location: URL | string, maxAgeSeconds = 86400) => {
 	return new Response(null, {
 		status: 302,
 		headers: {
 			Location: location.toString(),
-			'Cache-Control': 'public, max-age=86400'
+			'Cache-Control': `public, max-age=${maxAgeSeconds}`
 		}
 	});
 };
@@ -98,5 +98,5 @@ export const GET: RequestHandler = async ({ params, request }) => {
 	}
 
 	const fallbackUrl = new URL('/logo.png', request.url);
-	return withCacheHeaders(fallbackUrl);
+	return withCacheHeaders(fallbackUrl, 300);
 };

@@ -22,6 +22,8 @@
 	let isBalanceChartPanning = $state(false);
 	let balancePanStartX: number | null = null;
 	const POSITIONS_REFRESH_MS = 5000;
+	const TRANSACTIONS_LIMIT_LIST = 100;
+	const TRANSACTIONS_LIMIT_CHART = 1000;
 
 	const handleLogoError = (event: Event) => {
 		const target = event.currentTarget as HTMLImageElement | null;
@@ -63,7 +65,10 @@
 		}
 
 		const refreshModalChart = async () => {
-			await Promise.all([updateAccountData(), updateTransactionsData()]);
+			await Promise.all([
+				updateAccountData(),
+				updateTransactionsData(TRANSACTIONS_LIMIT_CHART),
+			]);
 			if (account) {
 				drawBalanceChart(account, transactions);
 			}
@@ -72,6 +77,8 @@
 		if (balanceChartInterval) {
 			clearInterval(balanceChartInterval);
 		}
+
+		void refreshModalChart();
 
 		balanceChartInterval = setInterval(() => {
 			void refreshModalChart();
@@ -145,7 +152,7 @@
 				await Promise.all([
 					fetch("/api/account", { credentials: "include" }),
 					fetch("/api/account/positions", { credentials: "include" }),
-					fetch("/api/account/transactions?limit=100", {
+					fetch(`/api/account/transactions?limit=${TRANSACTIONS_LIMIT_LIST}`, {
 						credentials: "include",
 					}),
 				]);
@@ -322,10 +329,10 @@
 		} catch (err) {}
 	}
 
-	async function updateTransactionsData() {
+	async function updateTransactionsData(limit = TRANSACTIONS_LIMIT_LIST) {
 		try {
 			const transactionsRes = await fetch(
-				"/api/account/transactions?limit=100",
+				`/api/account/transactions?limit=${limit}`,
 				{
 					credentials: "include",
 				},
@@ -555,6 +562,25 @@
 		) as HTMLCanvasElement;
 		if (!canvas) return;
 
+		const asAmount = (value: unknown) => Math.abs(Number(value) || 0);
+		const getTransactionDelta = (tx: Transaction) => {
+			const amount = asAmount(tx.amount);
+			switch (tx.type) {
+				case "deposit":
+					return amount;
+				case "withdrawal":
+					return -amount;
+				case "buy":
+					return -amount;
+				case "sell":
+					return amount;
+				case "dividend":
+					return amount;
+				default:
+					return 0;
+			}
+		};
+
 		const balanceHistory: { date: string; balance: number }[] = [];
 		let runningBalance = account.initial_balance;
 		const transactionsSorted = [...transactions].sort(
@@ -569,25 +595,20 @@
 		});
 
 		for (const tx of transactionsSorted) {
-			if (tx.type === "deposit") {
-				runningBalance += tx.amount;
-			} else if (tx.type === "withdrawal") {
-				runningBalance -= tx.amount;
-			} else if (tx.type === "buy") {
-				runningBalance -= tx.amount;
-			} else if (tx.type === "sell") {
-				runningBalance += tx.amount;
-			}
+			runningBalance += getTransactionDelta(tx);
 			balanceHistory.push({
 				date: new Date(tx.created_at).toLocaleDateString("fr-FR"),
 				balance: runningBalance,
 			});
 		}
 
-		balanceHistory.push({
-			date: new Date().toLocaleDateString("fr-FR"),
-			balance: account.current_balance,
-		});
+		const needsReconciliation = Math.abs(runningBalance - Number(account.current_balance)) > 0.01;
+		if (needsReconciliation) {
+			balanceHistory.push({
+				date: new Date().toLocaleDateString("fr-FR"),
+				balance: account.current_balance,
+			});
+		}
 
 		const ctx = canvas.getContext("2d");
 		if (!ctx) return;

@@ -62,6 +62,17 @@
 	let smaPeriod = $state(20);
 	let emaPeriod = $state(50);
 
+	const periodOptions = [
+		{ value: '1m', label: '1 min' },
+		{ value: '5m', label: '5 min' },
+		{ value: '1D', label: '1 j' },
+		{ value: '1W', label: '1 sem' },
+		{ value: '1M', label: '1 mois' },
+		{ value: '3M', label: '3 mois' },
+		{ value: '1Y', label: '1 an' },
+		{ value: '5Y', label: '5 ans' }
+	] as const;
+
 	function isMarketOpen(): { stock: boolean; crypto: boolean; isCrypto: boolean } {
 		const isCrypto = symbol.toUpperCase().includes('-USD') || 
 		                symbol.toUpperCase().includes('-BTC') || 
@@ -351,6 +362,39 @@
 		}
 	}
 
+	function isIntradayPeriod(period: string): boolean {
+		return period === '1m' || period === '5m';
+	}
+
+	function formatTickByPeriod(time: UTCTimestamp, period: string): string {
+		const date = new Date(Number(time) * 1000);
+		if (isIntradayPeriod(period)) {
+			return date.toLocaleTimeString('fr-CA', {
+				hour: '2-digit',
+				minute: '2-digit'
+			});
+		}
+
+		if (period === '1D') {
+			return date.toLocaleDateString('fr-CA', {
+				day: '2-digit',
+				month: 'short'
+			});
+		}
+
+		if (period === '1Y' || period === '5Y') {
+			return date.toLocaleDateString('fr-CA', {
+				month: 'short',
+				year: '2-digit'
+			});
+		}
+
+		return date.toLocaleDateString('fr-CA', {
+			day: '2-digit',
+			month: 'short'
+		});
+	}
+
 	let pendingCandleUpdates: CandlestickUpdate[] = [];
 
 	function handleCandleUpdate(data: CandlestickUpdate) {
@@ -432,13 +476,7 @@
 		const width = Math.floor(chartContainer.clientWidth);
 		const height = Math.floor(chartContainer.clientHeight);
 
-		const formatLocalTime = (time: UTCTimestamp) => {
-			const date = new Date(Number(time) * 1000);
-			return date.toLocaleTimeString('fr-CA', {
-				hour: '2-digit',
-				minute: '2-digit'
-			});
-		};
+		const formatLocalTime = (time: UTCTimestamp) => formatTickByPeriod(time, selectedPeriod);
 
 		chart = createChart(chartContainer, {
 			width: width > 0 ? width : undefined,
@@ -454,7 +492,7 @@
 			rightPriceScale: { borderColor: '#2d3748' },
 			timeScale: {
 				borderColor: '#2d3748',
-				timeVisible: true,
+				timeVisible: isIntradayPeriod(selectedPeriod),
 				tickMarkFormatter: formatLocalTime
 			},
 			localization: {
@@ -518,6 +556,16 @@
 	async function loadChartData(period: string) {
 		   if (!chartContainer) return;
 		   initChart();
+
+		   chart?.applyOptions({
+			   timeScale: {
+				   timeVisible: isIntradayPeriod(period),
+				   tickMarkFormatter: (time: UTCTimestamp) => formatTickByPeriod(time, period)
+			   },
+			   localization: {
+				   timeFormatter: (time: UTCTimestamp) => formatTickByPeriod(time, period)
+			   }
+		   });
 
 		   chartLoading = true;
 		   chartError = '';
@@ -689,13 +737,13 @@
 						<div class="control-group">
 							<span class="control-label">Periode</span>
 							<div class="period-selector">
-								{#each ['1m', '5m', '1D', '1W', '1M', '3M', '1Y', '5Y'] as period}
+								{#each periodOptions as option (option.value)}
 									<button
-										class="period-btn {selectedPeriod === period ? 'active' : ''}"
-										onclick={() => selectedPeriod = period}
+										class="period-btn {selectedPeriod === option.value ? 'active' : ''}"
+										onclick={() => selectedPeriod = option.value}
 										disabled={chartLoading}
 									>
-										{period}
+										{option.label}
 									</button>
 								{/each}
 							</div>

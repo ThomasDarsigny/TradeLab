@@ -19,6 +19,7 @@ CREATE TABLE user_settings (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     trading_bot_enabled BOOLEAN DEFAULT FALSE,
     bot_symbols TEXT DEFAULT 'BTC-USD,',
+    strategy_config JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(user_id)
@@ -55,6 +56,10 @@ CREATE TABLE positions (
     entry_price DECIMAL(10, 2) NOT NULL,
     current_price DECIMAL(10, 2) NOT NULL,
     status VARCHAR(10) NOT NULL CHECK (status IN ('open', 'closed')),
+    strategy TEXT,
+    close_reason TEXT,
+    signal_data JSONB,
+    exit_signal_data JSONB,
     profit_loss DECIMAL(12, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
