@@ -89,7 +89,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const resolveScanIntervalMs = (strategyConfig) => {
     const rawSeconds = Number(strategyConfig?.scanIntervalSeconds);
     const safeSeconds = Number.isFinite(rawSeconds) ? rawSeconds : BOT_STRATEGY_CONFIG.scanIntervalSeconds;
-    const boundedSeconds = Math.min(300, Math.max(1, safeSeconds));
+    const boundedSeconds = Math.max(1, safeSeconds);
     return Math.round(boundedSeconds * 1000);
 };
 
