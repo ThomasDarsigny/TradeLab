@@ -63,6 +63,34 @@
 
 	const totalGain = $derived(totalCurrent - totalInvested);
 
+	const getPositionReturnPercent = (pos: Position) => {
+		const entry = Number(pos.entry_price);
+		const current = Number(pos.current_price);
+		if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(current)) {
+			return 0;
+		}
+		return ((current - entry) / entry) * 100;
+	};
+
+	const getPositionPnLAmount = (pos: Position) => {
+		const qty = Number(pos.quantity);
+		const entry = Number(pos.entry_price);
+		const current = Number(pos.current_price);
+		if (
+			!Number.isFinite(qty) ||
+			!Number.isFinite(entry) ||
+			!Number.isFinite(current)
+		) {
+			return 0;
+		}
+		return qty * (current - entry);
+	};
+
+	const formatSignedCompactMoney = (amount: number) => {
+		const sign = amount >= 0 ? "+" : "-";
+		return `${sign}$${currencyCompact.format(Math.abs(amount))}`;
+	};
+
 	$effect(() => {
 		if (!showBalanceChart || !account) {
 			if (balanceChartInterval) {
@@ -842,6 +870,12 @@
 										pos.current_price,
 									)}</span
 								>
+								<span
+									class:positive={getPositionReturnPercent(pos) >= 0}
+									class:negative={getPositionReturnPercent(pos) < 0}
+								>
+									Rendement: {getPositionReturnPercent(pos) >= 0 ? '+' : ''}{getPositionReturnPercent(pos).toFixed(2)}% ({formatSignedCompactMoney(getPositionPnLAmount(pos))})
+								</span>
 							</div>
 						</a>
 					{/each}
@@ -1095,6 +1129,16 @@
 		gap: 0.25rem;
 		font-size: 0.85rem;
 		color: var(--text-muted);
+	}
+
+	.position-meta .positive {
+		color: var(--accent-green);
+		font-weight: 600;
+	}
+
+	.position-meta .negative {
+		color: var(--accent-red);
+		font-weight: 600;
 	}
 
 	.history-section {

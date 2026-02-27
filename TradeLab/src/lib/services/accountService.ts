@@ -4,6 +4,46 @@ import type { Account, Transaction, Position } from '$lib/types/account';
 
 const getClient = (client?: SupabaseClient) => client ?? supabase;
 
+const CRYPTO_QUOTE_SUFFIXES = ['-USD', '-USDT', '-USDC', '-EUR', '-BTC', '-ETH'];
+
+const isCryptoSymbol = (symbol: string) => {
+    const normalized = String(symbol || '').toUpperCase();
+    return CRYPTO_QUOTE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
+};
+
+const getMarketClockNY = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(date);
+
+    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+        weekday: map.weekday || 'Mon',
+        hour: Number(map.hour || 0),
+        minute: Number(map.minute || 0),
+    };
+};
+
+const isUsStockMarketOpenNow = (date = new Date()) => {
+    const { weekday, hour, minute } = getMarketClockNY(date);
+    const isBusinessDay = !['Sat', 'Sun'].includes(weekday);
+    if (!isBusinessDay) return false;
+
+    const currentMinutes = hour * 60 + minute;
+    const openMinutes = 9 * 60 + 30;
+    const closeMinutes = 16 * 60;
+    return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+};
+
+const isSellAllowedForSymbolNow = (symbol: string, date = new Date()) => {
+    if (isCryptoSymbol(symbol)) return true;
+    return isUsStockMarketOpenNow(date);
+};
+
 async function calculateOpenPositionsMarketValue(accountId: string, client?: SupabaseClient) {
     const db = getClient(client);
     const { data, error } = await db
@@ -331,6 +371,10 @@ export async function sellStock(
     exitPrice: number,
     client?: SupabaseClient
 ) {
+    if (!isSellAllowedForSymbolNow(symbol)) {
+        throw new Error(`Vente refusée hors heures de marché pour ${symbol}.`);
+    }
+
     const db = getClient(client);
     const { data: position, error: posError } = await db
         .from('positions')

@@ -106,7 +106,7 @@
                                 const row = profitRows[index];
                                 if (!row) return '$0.00';
                                 const sign = row.pnl >= 0 ? '+' : '';
-                                return `P&L: ${sign}$${row.pnl.toFixed(2)}`;
+                                return `Gains/Pertes: ${sign}$${row.pnl.toFixed(2)}`;
                             },
                             afterLabel: function(context: any) {
                                 const index = context.dataIndex;

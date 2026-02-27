@@ -226,6 +226,11 @@ const isBuyAllowedForSymbolNow = (symbol, date = new Date()) => {
     return isUsStockMarketOpenNow(date);
 };
 
+const isSellAllowedForSymbolNow = (symbol, date = new Date()) => {
+    if (isCryptoSymbol(symbol)) return true;
+    return isUsStockMarketOpenNow(date);
+};
+
 const resolveScanIntervalMs = (strategyConfig) => {
     const rawSeconds = Number(strategyConfig?.scanIntervalSeconds);
     const safeSeconds = Number.isFinite(rawSeconds) ? rawSeconds : BOT_STRATEGY_CONFIG.scanIntervalSeconds;
@@ -398,6 +403,26 @@ const addTransaction = async (accountId, type, amount, description, metadata) =>
 };
 
 const openPosition = async (account, symbol, entryPrice, quantity, signal, strategy) => {
+    if (!isBuyAllowedForSymbolNow(symbol)) {
+        const nyClock = getMarketClockNY();
+        console.log(`[BOT] Achat refusé (openPosition) hors séance US pour ${symbol} (${nyClock.weekday} ${String(nyClock.hour).padStart(2, '0')}:${String(nyClock.minute).padStart(2, '0')} ET).`);
+        await logBotAction(
+            account.user_id,
+            'info',
+            `Achat bloqué hors séance pour ${symbol}`,
+            symbol,
+            {
+                reason: 'outside_market_hours',
+                timezone: 'America/New_York',
+                weekday: nyClock.weekday,
+                hour: nyClock.hour,
+                minute: nyClock.minute,
+                strategy
+            }
+        );
+        return false;
+    }
+
     const totalCost = entryPrice * quantity;
     const fees = totalCost * TRADE_FEES_PERCENT;
 
@@ -442,6 +467,25 @@ const openPosition = async (account, symbol, entryPrice, quantity, signal, strat
 };
 
 const closePosition = async (account, position, exitPrice, signal, reason) => {
+    if (!isSellAllowedForSymbolNow(position.symbol)) {
+        const nyClock = getMarketClockNY();
+        console.log(`[BOT] Vente refusée hors séance US pour ${position.symbol} (${nyClock.weekday} ${String(nyClock.hour).padStart(2, '0')}:${String(nyClock.minute).padStart(2, '0')} ET).`);
+        await logBotAction(
+            account.user_id,
+            'info',
+            `Vente bloquée hors séance pour ${position.symbol}`,
+            position.symbol,
+            {
+                reason: 'outside_market_hours_sell',
+                timezone: 'America/New_York',
+                weekday: nyClock.weekday,
+                hour: nyClock.hour,
+                minute: nyClock.minute
+            }
+        );
+        return false;
+    }
+
     const exitFees = toNumber(position.quantity) * exitPrice * TRADE_FEES_PERCENT;
 
     const { data, error } = await supabase.rpc('close_position_atomic', {
@@ -608,6 +652,12 @@ const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {
         } 
         
         else if (decision.action === 'SELL' && position) {
+            if (!isSellAllowedForSymbolNow(symbol)) {
+                const nyClock = getMarketClockNY();
+                console.log(`[BOT] Vente bloquée hors séance US pour ${symbol} (${nyClock.weekday} ${String(nyClock.hour).padStart(2, '0')}:${String(nyClock.minute).padStart(2, '0')} ET).`);
+                continue;
+            }
+
             console.log(`[VENTE] ${symbol} @ ${decision.price.toFixed(2)} | Raison: ${decision.reason}`);
             await closePosition(account, position, decision.price, signal, decision.reason);
         } 
