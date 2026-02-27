@@ -160,6 +160,37 @@ const fetchCandles = async (symbol, period = '1M') => {
     return fetchCandlesFromBackend(symbol, period);
 };
 
+const calculateOpenPositionsMarketValue = async (accountId) => {
+    const { data, error } = await supabase
+        .from('positions')
+        .select('quantity, current_price')
+        .eq('account_id', accountId)
+        .eq('status', 'open')
+        .gt('quantity', 0);
+
+    if (error) return 0;
+
+    return (data || []).reduce(
+        (total, pos) => total + toNumber(pos.quantity) * toNumber(pos.current_price),
+        0
+    );
+};
+
+const syncAccountCurrentBalance = async (accountId, availableBalance) => {
+    const openPositionsValue = await calculateOpenPositionsMarketValue(accountId);
+    const currentBalance = toNumber(availableBalance) + openPositionsValue;
+
+    await supabase
+        .from('accounts')
+        .update({
+            current_balance: currentBalance,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', accountId);
+
+    return currentBalance;
+};
+
 const getAccount = async (userId) => {
     const { data, error } = await supabase
         .from('accounts')
@@ -168,7 +199,16 @@ const getAccount = async (userId) => {
         .single();
 
     if (error) return null;
-    return data;
+
+    const currentBalance = await syncAccountCurrentBalance(
+        data.id,
+        data.available_balance,
+    );
+
+    return {
+        ...data,
+        current_balance: currentBalance
+    };
 };
 
 const getOpenPosition = async (accountId, symbol) => {
@@ -308,13 +348,27 @@ const closePosition = async (account, position, exitPrice, signal, reason) => {
 };
 
 const updatePositionPrice = async (positionId, price) => {
-    await supabase
+    const { data } = await supabase
         .from('positions')
         .update({
             current_price: price,
             updated_at: new Date().toISOString()
         })
-        .eq('id', positionId);
+        .eq('id', positionId)
+        .select('account_id, current_price')
+        .single();
+
+    if (data?.account_id) {
+        const { data: account } = await supabase
+            .from('accounts')
+            .select('available_balance')
+            .eq('id', data.account_id)
+            .single();
+
+        if (account) {
+            await syncAccountCurrentBalance(data.account_id, account.available_balance);
+        }
+    }
 };
 
 const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {

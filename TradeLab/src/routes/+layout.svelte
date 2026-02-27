@@ -54,6 +54,39 @@
 		}
 	};
 
+	const normalizeBotActionType = (actionType: string) =>
+		String(actionType || "").toLowerCase();
+
+	const getBotActionIcon = (actionType: string) => {
+		switch (normalizeBotActionType(actionType)) {
+			case "buy":
+				return "↗";
+			case "sell":
+				return "↘";
+			case "error":
+				return "!";
+			case "info":
+				return "i";
+			default:
+				return "•";
+		}
+	};
+
+	const getBotActionIconClass = (actionType: string) => {
+		switch (normalizeBotActionType(actionType)) {
+			case "buy":
+				return "is-buy";
+			case "sell":
+				return "is-sell";
+			case "error":
+				return "is-error";
+			case "info":
+				return "is-info";
+			default:
+				return "is-default";
+		}
+	};
+
 	const loadTradingBotSetting = async () => {
 		tradingBotError = null;
 		tradingBotLoading = true;
@@ -764,6 +797,13 @@
 							{#each botActions as action (action.id)}
 								<li class="bot-panel-item">
 									<div class="bot-panel-line">
+										<span
+											class={`bot-panel-icon ${getBotActionIconClass(action.action_type)}`}
+											title={action.action_type}
+											aria-label={`Action ${action.action_type}`}
+										>
+											{getBotActionIcon(action.action_type)}
+										</span>
 										<span class="bot-panel-time"
 											>{formatBotTimestamp(
 												action.created_at,
@@ -1113,8 +1153,52 @@
 	.bot-panel-line {
 		display: flex;
 		gap: 0.5rem;
-		align-items: baseline;
+		align-items: center;
 		flex-wrap: wrap;
+	}
+
+	.bot-panel-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.1rem;
+		height: 1.1rem;
+		border-radius: 999px;
+		font-size: 0.7rem;
+		font-weight: 700;
+		line-height: 1;
+		border: 1px solid transparent;
+		flex-shrink: 0;
+	}
+
+	.bot-panel-icon.is-buy {
+		color: var(--accent-green);
+		background: rgba(16, 185, 129, 0.15);
+		border-color: rgba(16, 185, 129, 0.35);
+	}
+
+	.bot-panel-icon.is-sell {
+		color: var(--accent-red);
+		background: rgba(239, 68, 68, 0.12);
+		border-color: rgba(239, 68, 68, 0.3);
+	}
+
+	.bot-panel-icon.is-error {
+		color: var(--accent-red);
+		background: rgba(239, 68, 68, 0.2);
+		border-color: rgba(239, 68, 68, 0.4);
+	}
+
+	.bot-panel-icon.is-info {
+		color: var(--accent-primary);
+		background: rgba(59, 130, 246, 0.15);
+		border-color: rgba(59, 130, 246, 0.35);
+	}
+
+	.bot-panel-icon.is-default {
+		color: var(--text-muted);
+		background: rgba(148, 163, 184, 0.12);
+		border-color: rgba(148, 163, 184, 0.25);
 	}
 
 	.bot-panel-time {

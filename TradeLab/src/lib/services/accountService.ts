@@ -4,6 +4,57 @@ import type { Account, Transaction, Position } from '$lib/types/account';
 
 const getClient = (client?: SupabaseClient) => client ?? supabase;
 
+async function calculateOpenPositionsMarketValue(accountId: string, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data, error } = await db
+        .from('positions')
+        .select('quantity, current_price')
+        .eq('account_id', accountId)
+        .eq('status', 'open')
+        .gt('quantity', 0);
+
+    if (error) {
+        throw new Error(`Erreur lors du calcul de la valeur des positions: ${error.message}`);
+    }
+
+    return (data ?? []).reduce(
+        (total: number, pos: any) => total + Number(pos.quantity) * Number(pos.current_price),
+        0,
+    );
+}
+
+export async function syncCurrentBalanceFromAvailableAndPositions(accountId: string, client?: SupabaseClient) {
+    const db = getClient(client);
+    const { data: account, error: accountError } = await db
+        .from('accounts')
+        .select('*')
+        .eq('id', accountId)
+        .single();
+
+    if (accountError) {
+        throw new Error(`Erreur lors de la lecture du compte: ${accountError.message}`);
+    }
+
+    const positionsValue = await calculateOpenPositionsMarketValue(accountId, client);
+    const nextCurrentBalance = Number(account.available_balance) + positionsValue;
+
+    const { data: updated, error: updateError } = await db
+        .from('accounts')
+        .update({
+            current_balance: nextCurrentBalance,
+            updated_at: new Date().toISOString(),
+        })
+        .eq('id', accountId)
+        .select()
+        .single();
+
+    if (updateError) {
+        throw new Error(`Erreur lors de la synchronisation du solde courant: ${updateError.message}`);
+    }
+
+    return updated as Account;
+}
+
 //  GESTION DES COMPTES ------------------------------------------------
 
 /**
@@ -41,7 +92,8 @@ export async function getAccount(userId: string, client?: SupabaseClient) {
         .single();
 
     if (error && error.code !== 'PGRST116') throw error;
-    return data as Account | null;
+    if (!data) return null;
+    return syncCurrentBalanceFromAvailableAndPositions(data.id, client);
 }
 
 /**
@@ -97,7 +149,8 @@ export async function deposit(accountId: string, amount: number, description = '
     const newAvailable = Number(account.available_balance) + amount;
 
     await updateBalance(accountId, newBalance, client);
-    return updateAvailableBalance(accountId, newAvailable, client);
+    await updateAvailableBalance(accountId, newAvailable, client);
+    return syncCurrentBalanceFromAvailableAndPositions(accountId, client);
 }
 
 /**
@@ -123,7 +176,8 @@ export async function withdraw(accountId: string, amount: number, description = 
     const newAvailable = Number(account.available_balance) - amount;
     
     await updateBalance(accountId, newBalance, client);
-    return updateAvailableBalance(accountId, newAvailable, client);
+    await updateAvailableBalance(accountId, newAvailable, client);
+    return syncCurrentBalanceFromAvailableAndPositions(accountId, client);
 }
 
 /**
@@ -249,11 +303,10 @@ export async function buyStock(
         price: entryPrice,
     }, client);
 
-    const newBalance = Number(account.current_balance) - totalCost;
     const newAvailable = Number(account.available_balance) - totalCost;
     
-    await updateBalance(accountId, newBalance, client);
     await updateAvailableBalance(accountId, newAvailable, client);
+    await syncCurrentBalanceFromAvailableAndPositions(accountId, client);
 
     return position;
 }
@@ -323,11 +376,10 @@ export async function sellStock(
         profit_loss: profitLoss,
     }, client);
 
-    const newBalance = Number(account.current_balance) + totalRevenue;
     const newAvailable = Number(account.available_balance) + totalRevenue;
     
-    await updateBalance(accountId, newBalance, client);
     await updateAvailableBalance(accountId, newAvailable, client);
+    await syncCurrentBalanceFromAvailableAndPositions(accountId, client);
 
     return {
         position,
@@ -373,6 +425,7 @@ export async function updatePositionPrice(positionId: string, currentPrice: numb
         .single();
 
     if (error) throw error;
+    await syncCurrentBalanceFromAvailableAndPositions(data.account_id, client);
     return data as Position;
 }
 

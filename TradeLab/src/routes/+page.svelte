@@ -582,16 +582,22 @@
 		};
 
 		const balanceHistory: { date: string; balance: number }[] = [];
-		let runningBalance = account.initial_balance;
 		const transactionsSorted = [...transactions].sort(
 			(a, b) =>
 				new Date(a.created_at).getTime() -
 				new Date(b.created_at).getTime(),
 		);
 
+		const totalDelta = transactionsSorted.reduce(
+			(total, tx) => total + getTransactionDelta(tx),
+			0,
+		);
+
+		let runningBalance = Number(account.current_balance) - totalDelta;
+
 		balanceHistory.push({
 			date: new Date(account.created_at).toLocaleDateString("fr-FR"),
-			balance: account.initial_balance,
+			balance: runningBalance,
 		});
 
 		for (const tx of transactionsSorted) {
@@ -599,14 +605,6 @@
 			balanceHistory.push({
 				date: new Date(tx.created_at).toLocaleDateString("fr-FR"),
 				balance: runningBalance,
-			});
-		}
-
-		const needsReconciliation = Math.abs(runningBalance - Number(account.current_balance)) > 0.01;
-		if (needsReconciliation) {
-			balanceHistory.push({
-				date: new Date().toLocaleDateString("fr-FR"),
-				balance: account.current_balance,
 			});
 		}
 
