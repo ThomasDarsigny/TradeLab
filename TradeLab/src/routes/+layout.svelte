@@ -87,6 +87,69 @@
 		}
 	};
 
+	const toFiniteNumber = (value: unknown) => {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	};
+
+	const getBotActionLabel = (actionType: string) => {
+		switch (normalizeBotActionType(actionType)) {
+			case "buy":
+				return "ACHETÉ";
+			case "sell":
+				return "VENDU";
+			case "error":
+				return "ERREUR";
+			case "info":
+				return "INFO";
+			default:
+				return "ACTION";
+		}
+	};
+
+	const formatBotActionMessage = (action: BotAction) => {
+		const details = action.details ?? {};
+		const label = getBotActionLabel(action.action_type);
+		const symbol =
+			action.symbol ||
+			(typeof details.symbol === "string" ? details.symbol : "Titre inconnu");
+
+		const parts = [label, symbol];
+
+		const built = parts.join(" • ");
+		const fallback = action.message?.trim();
+		return built || fallback || "Action du bot";
+	};
+
+	const getBotActionQuantity = (action: BotAction) => {
+		const details = action.details ?? {};
+		const quantity = toFiniteNumber(details.quantity);
+		if (quantity !== null && quantity > 0) {
+			return quantity.toFixed(4);
+		}
+		return "";
+	};
+
+	const getBotActionStrategy = (action: BotAction) => {
+		const details = action.details ?? {};
+		if (typeof details.strategy === "string" && details.strategy.trim()) {
+			return details.strategy.trim();
+		}
+
+		const message = action.message || "";
+		const viaMatch = message.match(/\bvia\s+([\w-]+)/i);
+		if (viaMatch?.[1]) {
+			return viaMatch[1].trim();
+		}
+
+		const strategyMatch = message.match(/\bstrat[ée]gie\s*[:=]?\s*([\w-]+)/i);
+		if (strategyMatch?.[1]) {
+			return strategyMatch[1].trim();
+		}
+
+		return "";
+	};
+
 	const loadTradingBotSetting = async () => {
 		tradingBotError = null;
 		tradingBotLoading = true;
@@ -796,7 +859,7 @@
 						<ul class="bot-panel-list">
 							{#each botActions as action (action.id)}
 								<li class="bot-panel-item">
-									<div class="bot-panel-line">
+									<div class="bot-panel-date-line">
 										<span
 											class={`bot-panel-icon ${getBotActionIconClass(action.action_type)}`}
 											title={action.action_type}
@@ -809,13 +872,24 @@
 												action.created_at,
 											)}</span
 										>
+									</div>
+									<div class="bot-panel-message-line">
 										<span class="bot-panel-message"
-											>{action.message}</span
+											>{formatBotActionMessage(action)}</span
 										>
 									</div>
-									{#if action.symbol}
-										<div class="bot-panel-symbol">
-											{action.symbol}
+									{#if getBotActionQuantity(action)}
+										<div class="bot-panel-quantity-line">
+											<span class="bot-panel-quantity-badge">
+												Quantité: {getBotActionQuantity(action)}
+											</span>
+										</div>
+									{/if}
+									{#if getBotActionStrategy(action)}
+										<div class="bot-panel-strategy-line">
+											<span class="bot-panel-strategy-badge">
+												Stratégie: {getBotActionStrategy(action)}
+											</span>
 										</div>
 									{/if}
 								</li>
@@ -1150,11 +1224,18 @@
 		}
 	}
 
-	.bot-panel-line {
+	.bot-panel-date-line {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
-		flex-wrap: wrap;
+	}
+
+	.bot-panel-message-line {
+		margin-top: 0.35rem;
+	}
+
+	.bot-panel-strategy-line {
+		margin-top: 0.35rem;
 	}
 
 	.bot-panel-icon {
@@ -1210,15 +1291,33 @@
 	.bot-panel-message {
 		font-size: 0.85rem;
 		color: var(--text-primary);
-		flex: 1;
+		display: block;
 	}
 
-	.bot-panel-symbol {
-		margin-top: 0.25rem;
-		font-size: 0.75rem;
-		color: var(--accent-primary);
-		font-weight: 700;
-		text-transform: uppercase;
+	.bot-panel-quantity-line {
+		margin-top: 0.35rem;
+	}
+
+	.bot-panel-quantity-badge {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		background: rgba(16, 185, 129, 0.12);
+		border: 1px solid rgba(16, 185, 129, 0.28);
+		border-radius: 999px;
+		padding: 0.14rem 0.5rem;
+		line-height: 1.2;
+	}
+
+	.bot-panel-strategy-badge {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-primary);
+		background: rgba(59, 130, 246, 0.12);
+		border: 1px solid rgba(59, 130, 246, 0.28);
+		border-radius: 999px;
+		padding: 0.14rem 0.5rem;
+		line-height: 1.2;
 	}
 
 	.modal-backdrop {
