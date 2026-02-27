@@ -53,6 +53,14 @@
 		),
 	);
 
+	const positionsValueFromBalances = $derived.by(() => {
+		if (!account) return 0;
+		const currentBalance = Math.max(0, Number(account.current_balance));
+		const availableBalance = Number(account.available_balance);
+		const rawPositionsValue = currentBalance - availableBalance;
+		return Math.max(0, Math.min(currentBalance, rawPositionsValue));
+	});
+
 	const totalGain = $derived(totalCurrent - totalInvested);
 
 	$effect(() => {
@@ -773,7 +781,7 @@
 			</div>
 			<div class="summary-card">
 				<span>Valeur des positions</span>
-				<strong>${currency.format(totalCurrent)}</strong>
+				<strong>${currency.format(positionsValueFromBalances)}</strong>
 			</div>
 			<button
 				type="button"

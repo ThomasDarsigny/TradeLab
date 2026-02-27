@@ -36,11 +36,13 @@ export async function syncCurrentBalanceFromAvailableAndPositions(accountId: str
     }
 
     const positionsValue = await calculateOpenPositionsMarketValue(accountId, client);
-    const nextCurrentBalance = Number(account.available_balance) + positionsValue;
+    const normalizedAvailableBalance = Math.max(0, Number(account.available_balance));
+    const nextCurrentBalance = normalizedAvailableBalance + positionsValue;
 
     const { data: updated, error: updateError } = await db
         .from('accounts')
         .update({
+            available_balance: normalizedAvailableBalance,
             current_balance: nextCurrentBalance,
             updated_at: new Date().toISOString(),
         })
@@ -116,6 +118,14 @@ export async function updateBalance(accountId: string, newBalance: number, clien
  * MAJ le solde disponible
  */
 export async function updateAvailableBalance(accountId: string, amount: number, client?: SupabaseClient) {
+    if (!Number.isFinite(Number(amount))) {
+        throw new Error('Montant du solde disponible invalide.');
+    }
+
+    if (Number(amount) < 0) {
+        throw new Error('Le solde disponible ne peut pas être inférieur à 0$.');
+    }
+
     const db = getClient(client);
     const { data, error } = await db
         .from('accounts')

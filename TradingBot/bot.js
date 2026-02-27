@@ -86,6 +86,146 @@ const toNumber = (value) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const CRYPTO_QUOTE_SUFFIXES = ['-USD', '-USDT', '-USDC', '-EUR', '-BTC', '-ETH'];
+
+const isCryptoSymbol = (symbol) => {
+    const normalized = String(symbol || '').toUpperCase();
+    return CRYPTO_QUOTE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
+};
+
+const pad2 = (value) => String(value).padStart(2, '0');
+const dateKey = (year, month, day) => `${year}-${pad2(month)}-${pad2(day)}`;
+
+const getMarketDatePartsNY = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).formatToParts(date);
+
+    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+        year: Number(map.year || 0),
+        month: Number(map.month || 1),
+        day: Number(map.day || 1),
+        weekday: map.weekday || 'Mon',
+        hour: Number(map.hour || 0),
+        minute: Number(map.minute || 0)
+    };
+};
+
+const getMarketClockNY = (date = new Date()) => {
+    const map = getMarketDatePartsNY(date);
+    return {
+        weekday: map.weekday,
+        hour: map.hour,
+        minute: map.minute
+    };
+};
+
+const nthWeekdayOfMonth = (year, month, weekday, nth) => {
+    const firstDayDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const delta = (weekday - firstDayDow + 7) % 7;
+    return 1 + delta + (nth - 1) * 7;
+};
+
+const lastWeekdayOfMonth = (year, month, weekday) => {
+    const lastDate = new Date(Date.UTC(year, month, 0));
+    const lastDay = lastDate.getUTCDate();
+    const lastDow = lastDate.getUTCDay();
+    const delta = (lastDow - weekday + 7) % 7;
+    return lastDay - delta;
+};
+
+const observedFixedHoliday = (year, month, day) => {
+    const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (dow === 6) {
+        return { month, day: day - 1 };
+    }
+    if (dow === 0) {
+        return { month, day: day + 1 };
+    }
+    return { month, day };
+};
+
+const calculateEasterSunday = (year) => {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return { month, day };
+};
+
+const getNyseHolidayKeys = (year) => {
+    const holidays = [];
+
+    const newYear = observedFixedHoliday(year, 1, 1);
+    holidays.push(dateKey(year, newYear.month, newYear.day));
+
+    holidays.push(dateKey(year, 1, nthWeekdayOfMonth(year, 1, 1, 3)));
+    holidays.push(dateKey(year, 2, nthWeekdayOfMonth(year, 2, 1, 3)));
+
+    const easter = calculateEasterSunday(year);
+    const easterSunday = new Date(Date.UTC(year, easter.month - 1, easter.day));
+    const goodFriday = new Date(easterSunday);
+    goodFriday.setUTCDate(easterSunday.getUTCDate() - 2);
+    holidays.push(dateKey(year, goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
+
+    holidays.push(dateKey(year, 5, lastWeekdayOfMonth(year, 5, 1)));
+
+    const juneteenth = observedFixedHoliday(year, 6, 19);
+    holidays.push(dateKey(year, juneteenth.month, juneteenth.day));
+
+    const independenceDay = observedFixedHoliday(year, 7, 4);
+    holidays.push(dateKey(year, independenceDay.month, independenceDay.day));
+
+    holidays.push(dateKey(year, 9, nthWeekdayOfMonth(year, 9, 1, 1)));
+    holidays.push(dateKey(year, 11, nthWeekdayOfMonth(year, 11, 4, 4)));
+
+    const christmas = observedFixedHoliday(year, 12, 25);
+    holidays.push(dateKey(year, christmas.month, christmas.day));
+
+    return new Set(holidays);
+};
+
+const isNyseHoliday = (date = new Date()) => {
+    const { year, month, day } = getMarketDatePartsNY(date);
+    const key = dateKey(year, month, day);
+    return getNyseHolidayKeys(year).has(key);
+};
+
+const isUsStockMarketOpenNow = (date = new Date()) => {
+    const { weekday, hour, minute } = getMarketClockNY(date);
+    const isBusinessDay = !['Sat', 'Sun'].includes(weekday);
+    if (!isBusinessDay) return false;
+    if (isNyseHoliday(date)) return false;
+
+    const currentMinutes = hour * 60 + minute;
+    const openMinutes = 9 * 60 + 30;
+    const closeMinutes = 16 * 60;
+    return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+};
+
+const isBuyAllowedForSymbolNow = (symbol, date = new Date()) => {
+    if (isCryptoSymbol(symbol)) return true;
+    return isUsStockMarketOpenNow(date);
+};
+
 const resolveScanIntervalMs = (strategyConfig) => {
     const rawSeconds = Number(strategyConfig?.scanIntervalSeconds);
     const safeSeconds = Number.isFinite(rawSeconds) ? rawSeconds : BOT_STRATEGY_CONFIG.scanIntervalSeconds;
@@ -177,12 +317,14 @@ const calculateOpenPositionsMarketValue = async (accountId) => {
 };
 
 const syncAccountCurrentBalance = async (accountId, availableBalance) => {
+    const normalizedAvailableBalance = Math.max(0, toNumber(availableBalance));
     const openPositionsValue = await calculateOpenPositionsMarketValue(accountId);
-    const currentBalance = toNumber(availableBalance) + openPositionsValue;
+    const currentBalance = normalizedAvailableBalance + openPositionsValue;
 
     await supabase
         .from('accounts')
         .update({
+            available_balance: normalizedAvailableBalance,
             current_balance: currentBalance,
             updated_at: new Date().toISOString()
         })
@@ -372,7 +514,7 @@ const updatePositionPrice = async (positionId, price) => {
 };
 
 const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {
-    const account = await getAccount(userId);
+    let account = await getAccount(userId);
     if (!account) return;
 
     const effectiveStrategyConfig = normalizeStrategyConfig(userStrategyConfig);
@@ -415,8 +557,13 @@ const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {
         
         const decision = makeDecision(signal, position, effectiveStrategyConfig);
 
-        // === EXÉCUTION DE LA DÉCISION ===
         if (decision.action === 'BUY' && !position) {
+            if (!isBuyAllowedForSymbolNow(symbol)) {
+                const nyClock = getMarketClockNY();
+                console.log(`[BOT] Achat bloqué hors séance US pour ${symbol} (${nyClock.weekday} ${String(nyClock.hour).padStart(2, '0')}:${String(nyClock.minute).padStart(2, '0')} ET).`);
+                continue;
+            }
+
             const openCount = await countOpenPositions(account.id);
             if (openCount >= MAX_OPEN_POSITIONS) {
                 console.log(`[BOT] Max positions (${openCount}/${MAX_OPEN_POSITIONS}), pas de nouvelles entrees`);
@@ -430,17 +577,31 @@ const runCycleForUser = async (userId, userSymbols, userStrategyConfig) => {
                 continue;
             }
 
-            const riskAmount = toNumber(account.current_balance) * BOT_RISK_PERCENT;
+            const availableBalance = Math.max(0, toNumber(account.available_balance));
+            const riskAmount = Math.max(0, toNumber(account.current_balance) * BOT_RISK_PERCENT);
             const riskPerUnit = entryPrice - stopLoss;
             let qty = riskPerUnit > 0 ? riskAmount / riskPerUnit : 0;
 
-
-            const maxQty = (toNumber(account.current_balance) * MAX_POSITION_SIZE_PERCENT) / entryPrice;
+            const maxQtyByPortfolio = (toNumber(account.current_balance) * MAX_POSITION_SIZE_PERCENT) / entryPrice;
+            const maxQtyByCash = availableBalance / (entryPrice * (1 + TRADE_FEES_PERCENT));
+            const maxQty = Math.max(0, Math.min(maxQtyByPortfolio, maxQtyByCash));
             qty = Math.max(0, Math.min(qty, maxQty));
+
+            const estimatedTotalCost = qty * entryPrice * (1 + TRADE_FEES_PERCENT);
+            if (estimatedTotalCost > availableBalance) {
+                console.log(`[BOT] Fonds insuffisants pour ${symbol}. Cout estimé ${estimatedTotalCost.toFixed(2)} > dispo ${availableBalance.toFixed(2)}`);
+                continue;
+            }
 
             if (qty > 0) {
                 console.log(`[${decision.strategy}] Achat ${symbol} - ${qty.toFixed(4)} unites @ ${entryPrice.toFixed(2)} (Position ${openCount + 1}/${MAX_OPEN_POSITIONS}) | Raison: ${decision.reason}`);
-                await openPosition(account, symbol, entryPrice, qty, signal, decision.strategy);
+                const opened = await openPosition(account, symbol, entryPrice, qty, signal, decision.strategy);
+                if (opened) {
+                    const refreshedAccount = await getAccount(userId);
+                    if (refreshedAccount) {
+                        account = refreshedAccount;
+                    }
+                }
             } else {
                 console.log(`[BOT] Taille invalide pour ${symbol}`);
             }

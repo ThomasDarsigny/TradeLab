@@ -36,11 +36,29 @@
     function updateProfitChart() {
         if (!profitChartCanvas) return;
 
-        const data = positions.map(pos => {
-            const invested = pos.quantity * pos.entry_price;
-            const current = pos.quantity * pos.current_price;
-            return current - invested;
-        });
+        const profitRows = positions
+            .map((pos) => {
+                const invested = pos.quantity * pos.entry_price;
+                const current = pos.quantity * pos.current_price;
+                const pnl = current - invested;
+                const pnlPercent = invested > 0 ? (pnl / invested) * 100 : 0;
+                return {
+                    symbol: pos.symbol,
+                    invested,
+                    current,
+                    pnl,
+                    pnlPercent,
+                };
+            })
+            .sort((a, b) => b.pnl - a.pnl);
+
+        const data = profitRows.map((row) => row.pnl);
+        const minValue = Math.min(...data, 0);
+        const maxValue = Math.max(...data, 0);
+        const range = Math.max(1, maxValue - minValue);
+        const padding = range * 0.12;
+        const suggestedMin = minValue - padding;
+        const suggestedMax = maxValue + padding;
 
         const ctx = profitChartCanvas.getContext('2d');
         if (!ctx) return;
@@ -54,7 +72,7 @@
         profitChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: positions.map(pos => pos.symbol),
+                labels: profitRows.map((row) => row.symbol),
                 datasets: [
                     {
                         label: 'Gain/Perte ($)',
@@ -72,7 +90,7 @@
                 indexAxis: 'y',
                 plugins: {
                     legend: {
-                        display: true,
+                        display: false,
                         labels: {
                             color: colors.textPrimary,
                             font: { size: 12 }
@@ -80,8 +98,25 @@
                     },
                     tooltip: {
                         callbacks: {
+                            title: function(context: any) {
+                                return `Titre: ${context[0]?.label ?? ''}`;
+                            },
                             label: function(context: any) {
-                                return '$' + context.parsed.x.toFixed(2);
+                                const index = context.dataIndex;
+                                const row = profitRows[index];
+                                if (!row) return '$0.00';
+                                const sign = row.pnl >= 0 ? '+' : '';
+                                return `P&L: ${sign}$${row.pnl.toFixed(2)}`;
+                            },
+                            afterLabel: function(context: any) {
+                                const index = context.dataIndex;
+                                const row = profitRows[index];
+                                if (!row) return '';
+                                const sign = row.pnlPercent >= 0 ? '+' : '';
+                                return [
+                                    `Rendement: ${sign}${row.pnlPercent.toFixed(2)}%`,
+                                    `Valeur actuelle: $${row.current.toFixed(2)}`
+                                ];
                             }
                         }
                     }
@@ -89,6 +124,8 @@
                 scales: {
                     x: {
                         stacked: false,
+                        suggestedMin,
+                        suggestedMax,
                         ticks: {
                             color: colors.textSecondary,
                             callback: function(value: any) {
@@ -96,7 +133,14 @@
                             }
                         },
                         grid: {
-                            color: colors.borderPrimary
+                            color: function(context: any) {
+                                return context.tick.value === 0
+                                    ? 'rgba(59, 130, 246, 0.45)'
+                                    : colors.borderPrimary;
+                            },
+                            lineWidth: function(context: any) {
+                                return context.tick.value === 0 ? 2 : 1;
+                            }
                         }
                     },
                     y: {
