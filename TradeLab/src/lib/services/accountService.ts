@@ -11,9 +11,15 @@ const isCryptoSymbol = (symbol: string) => {
     return CRYPTO_QUOTE_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 };
 
-const getMarketClockNY = (date = new Date()) => {
+const pad2 = (value: number | string) => String(value).padStart(2, '0');
+const dateKey = (year: number, month: number, day: number) => `${year}-${pad2(month)}-${pad2(day)}`;
+
+const getMarketDatePartsNY = (date = new Date()) => {
     const parts = new Intl.DateTimeFormat('en-US', {
         timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
         weekday: 'short',
         hour: '2-digit',
         minute: '2-digit',
@@ -22,16 +28,105 @@ const getMarketClockNY = (date = new Date()) => {
 
     const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
     return {
+        year: Number(map.year || 0),
+        month: Number(map.month || 1),
+        day: Number(map.day || 1),
         weekday: map.weekday || 'Mon',
         hour: Number(map.hour || 0),
         minute: Number(map.minute || 0),
     };
 };
 
+const getMarketClockNY = (date = new Date()) => {
+    const map = getMarketDatePartsNY(date);
+    return {
+        weekday: map.weekday,
+        hour: map.hour,
+        minute: map.minute,
+    };
+};
+
+const nthWeekdayOfMonth = (year: number, month: number, weekday: number, nth: number) => {
+    const firstDayDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const delta = (weekday - firstDayDow + 7) % 7;
+    return 1 + delta + (nth - 1) * 7;
+};
+
+const lastWeekdayOfMonth = (year: number, month: number, weekday: number) => {
+    const lastDate = new Date(Date.UTC(year, month, 0));
+    const lastDay = lastDate.getUTCDate();
+    const lastDow = lastDate.getUTCDay();
+    const delta = (lastDow - weekday + 7) % 7;
+    return lastDay - delta;
+};
+
+const observedFixedHoliday = (year: number, month: number, day: number) => {
+    const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (dow === 6) return { month, day: day - 1 };
+    if (dow === 0) return { month, day: day + 1 };
+    return { month, day };
+};
+
+const calculateEasterSunday = (year: number) => {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return { month, day };
+};
+
+const getNyseHolidayKeys = (year: number) => {
+    const holidays: string[] = [];
+
+    const newYear = observedFixedHoliday(year, 1, 1);
+    holidays.push(dateKey(year, newYear.month, newYear.day));
+
+    holidays.push(dateKey(year, 1, nthWeekdayOfMonth(year, 1, 1, 3)));
+    holidays.push(dateKey(year, 2, nthWeekdayOfMonth(year, 2, 1, 3)));
+
+    const easter = calculateEasterSunday(year);
+    const easterSunday = new Date(Date.UTC(year, easter.month - 1, easter.day));
+    const goodFriday = new Date(easterSunday);
+    goodFriday.setUTCDate(easterSunday.getUTCDate() - 2);
+    holidays.push(dateKey(year, goodFriday.getUTCMonth() + 1, goodFriday.getUTCDate()));
+
+    holidays.push(dateKey(year, 5, lastWeekdayOfMonth(year, 5, 1)));
+
+    const juneteenth = observedFixedHoliday(year, 6, 19);
+    holidays.push(dateKey(year, juneteenth.month, juneteenth.day));
+
+    const independenceDay = observedFixedHoliday(year, 7, 4);
+    holidays.push(dateKey(year, independenceDay.month, independenceDay.day));
+
+    holidays.push(dateKey(year, 9, nthWeekdayOfMonth(year, 9, 1, 1)));
+    holidays.push(dateKey(year, 11, nthWeekdayOfMonth(year, 11, 4, 4)));
+
+    const christmas = observedFixedHoliday(year, 12, 25);
+    holidays.push(dateKey(year, christmas.month, christmas.day));
+
+    return new Set(holidays);
+};
+
+const isNyseHoliday = (date = new Date()) => {
+    const { year, month, day } = getMarketDatePartsNY(date);
+    return getNyseHolidayKeys(year).has(dateKey(year, month, day));
+};
+
 const isUsStockMarketOpenNow = (date = new Date()) => {
     const { weekday, hour, minute } = getMarketClockNY(date);
     const isBusinessDay = !['Sat', 'Sun'].includes(weekday);
     if (!isBusinessDay) return false;
+    if (isNyseHoliday(date)) return false;
 
     const currentMinutes = hour * 60 + minute;
     const openMinutes = 9 * 60 + 30;
