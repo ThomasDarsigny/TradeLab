@@ -6,6 +6,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const TRADELAB_API_BASE_URL = process.env.TRADELAB_API_BASE_URL || 'http://127.0.0.1:5173';
 const TRADELAB_BACKEND_BASE_URL = process.env.TRADELAB_BACKEND_BASE_URL || 'http://127.0.0.1:8001';
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL || '';
 const BOT_DRIVER_INTERVAL_MS = Number(process.env.BOT_DRIVER_INTERVAL_MS || 1000);
 const BOT_RISK_PERCENT = Number(process.env.BOT_RISK_PERCENT || 0.01);
 const BOT_SYMBOLS = (process.env.BOT_SYMBOLS || 'BTC-USD')
@@ -80,11 +81,92 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 
 const toNumber = (value) => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (typeof value === 'bigint') {
+        const asNumber = Number(value);
+        return Number.isFinite(asNumber) ? asNumber : 0;
+    }
+
     const parsed = Number.parseFloat(String(value));
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const DISCORD_NOTIFICATION_DELAY_MS = Number(process.env.DISCORD_NOTIFICATION_DELAY_MS || 500);
+let discordNotificationQueue = Promise.resolve();
+
+const enqueueDiscordTradeNotification = (payload) => {
+    discordNotificationQueue = discordNotificationQueue
+        .then(() => sendDiscordTradeNotification(payload))
+        .then(() => sleep(Math.max(0, DISCORD_NOTIFICATION_DELAY_MS)))
+        .catch((error) => {
+            console.error('[DISCORD] Erreur queue notification', error);
+        });
+
+    return discordNotificationQueue;
+};
+
+const sendDiscordTradeNotification = async ({
+    action,
+    symbol,
+    quantity,
+    price,
+    strategy,
+    reason,
+    fees,
+    pnlValue,
+    pnlPercent
+}) => {
+    if (!DISCORD_WEBHOOK_URL) return;
+
+    const actionLabel = action === 'BUY' ? 'ACHAT' : 'VENTE';
+    const actionIcon = action === 'BUY' ? '🟢' : '🔴';
+    const embedColor = action === 'BUY' ? 5763719 : 15548997;
+    const formatUsd = (value) => `$${toNumber(value).toFixed(2)}`;
+    const fields = [
+        { name: 'Action', value: actionLabel, inline: true },
+        { name: 'Symbole', value: String(symbol || 'N/A'), inline: true },
+        { name: 'Quantite', value: toNumber(quantity).toFixed(4), inline: true },
+        { name: 'Prix', value: formatUsd(price), inline: true }
+    ];
+
+    if (strategy) fields.push({ name: 'Strategie', value: String(strategy), inline: true });
+    if (reason) fields.push({ name: 'Raison', value: String(reason), inline: false });
+    if (Number.isFinite(toNumber(fees)) && toNumber(fees) > 0) {
+        fields.push({ name: 'Frais', value: formatUsd(fees), inline: true });
+    }
+    if (Number.isFinite(toNumber(pnlValue))) {
+        fields.push({ name: 'PnL', value: formatUsd(pnlValue), inline: true });
+    }
+    if (pnlPercent !== undefined && pnlPercent !== null) {
+        fields.push({ name: 'PnL %', value: String(pnlPercent), inline: true });
+    }
+
+    try {
+        const response = await fetch(DISCORD_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: 'TradeLab Bot',
+                embeds: [
+                    {
+                        title: `${actionIcon} ${actionLabel} EXECUTE`,
+                        color: embedColor,
+                        fields,
+                        timestamp: new Date().toISOString()
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            console.error(`[DISCORD] Echec webhook (${response.status} ${response.statusText})`);
+        }
+    } catch (error) {
+        console.error('[DISCORD] Erreur envoi notification', error);
+    }
+};
 
 const CRYPTO_QUOTE_SUFFIXES = ['-USD', '-USDT', '-USDC', '-EUR', '-BTC', '-ETH'];
 
@@ -463,6 +545,15 @@ const openPosition = async (account, symbol, entryPrice, quantity, signal, strat
         { quantity, entryPrice, signal, strategy, fees }
     );
 
+    await enqueueDiscordTradeNotification({
+        action: 'BUY',
+        symbol,
+        quantity,
+        price: entryPrice,
+        strategy,
+        fees
+    });
+
     return true;
 };
 
@@ -529,6 +620,17 @@ const closePosition = async (account, position, exitPrice, signal, reason) => {
         position.symbol,
         { profitLoss: pnlValue, exitPrice, reason }
     );
+
+    await enqueueDiscordTradeNotification({
+        action: 'SELL',
+        symbol: position.symbol,
+        quantity: position.quantity,
+        price: exitPrice,
+        reason,
+        fees: exitFees,
+        pnlValue,
+        pnlPercent: `${pnlPercent}%`
+    });
 
     return true;
 };

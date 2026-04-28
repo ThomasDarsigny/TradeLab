@@ -570,7 +570,8 @@
 		   chartLoading = true;
 		   chartError = '';
 		   try {
-			   const response = await fetch(`/api/stock/${symbol}/candles?period=${period}`);
+			   const response = await fetch(`/api/stock/${symbol}/candles?period=${period}`); //Autosubscribe via un store, 
+			   											// pas besoin de recharger les données à chaque changement de période
 			   if (!response.ok) {
 				   chartError = 'Données du graphique indisponibles';
 				   return;

@@ -236,12 +236,17 @@ async def websocket_quotes(websocket: WebSocket):
 @app.websocket("/ws/candlesticks")
 async def websocket_candlesticks(websocket: WebSocket):
     """WebSocket pour streaming de candlesticks en temps réel"""
+    # HandShake: Accepte la connexion WebSocket pour les candlesticks
     await manager.connect_candlestick(websocket)
     
     try:
-        while True:
+        # Tant que cette boucle tourne, le serveur continue d'écouter les messages 
+        # du client et d'envoyer des mises à jour de candlesticks
+        while True:                 
             try:
+                # Attend un message du client demande d'abonnement/désabonnement                                                                                # Demande d'abonnement/désabonnement
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=2)
+                                                                                   
                 message = json.loads(data)
 
                 action = message.get('action')
@@ -256,7 +261,9 @@ async def websocket_candlesticks(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass
             
-            for sub_symbol in manager.candlestick_subscriptions.get(websocket, set()):
+            # Pour chaque symbole auquel le client est abonné, 
+            # récupère le dernier chandelier et envoie une mise à jour
+            for sub_symbol in manager.candlestick_subscriptions.get(websocket, set()): 
                 try:
                     ticker = yf.Ticker(sub_symbol)
                     hist = ticker.history(period="1d", interval="1m")
@@ -281,12 +288,15 @@ async def websocket_candlesticks(websocket: WebSocket):
                             'timestamp': asyncio.get_event_loop().time()
                         }
                         
+                        # Envoie la mise à jour du candlestick au client
                         await websocket.send_json(candlestick_data)
                 except Exception as e:
                     print(f"Error fetching candlestick for {sub_symbol}: {e}")
-            
+    
+    #Le WS peut se fermer de manière normale (client qui se déconnecte) 
     except WebSocketDisconnect:
         manager.disconnect_candlestick(websocket)
+    #Ou il peut y avoir une erreur inattendue (ex: problème de réseau, bug dans le code, etc.)
     except Exception as e:
         print(f"WebSocket candlestick error: {e}")
         manager.disconnect_candlestick(websocket)

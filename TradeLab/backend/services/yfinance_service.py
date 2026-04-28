@@ -2,10 +2,10 @@
 Yahoo Finance API Service avec protection anti-blocage avancée
 
 Fonctionnalités:
-- ✅ Cloudscraper pour contourner les protections anti-bot
-- ✅ Rotation des User-Agents (Chrome 142+, Firefox 123+)
-- ✅ Rate limiting automatique entre les requêtes
-- ✅ Rotation et suivi d'état des proxies privés
+- Cloudscraper pour contourner les protections anti-bot
+- Rotation des User-Agents (Chrome 142+, Firefox 123+)
+- Rate limiting automatique entre les requêtes
+- Rotation et suivi d'état des proxies privés
 
 Configuration des proxies:
 Utilise proxy_config.py pour fournir une liste de proxies privés.
@@ -65,6 +65,7 @@ app.add_middleware(
 last_request_time = 0
 current_proxy_url = None
 
+#Initialise le pool de proxies au démarrage du service
 @app.on_event("startup")
 async def startup_event():
     """Initialise le gestionnaire de proxies au démarrage"""
