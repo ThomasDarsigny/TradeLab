@@ -1,96 +1,149 @@
 <script lang="ts">
+    import { slide } from 'svelte/transition';
     import { supabase } from '$lib/supabaseClient';
+    import { checkPassword, getFriendlyAuthError, isValidEmail } from '$lib/utils/authValidation';
 
-    const { initialMode = 'login' } = $props<{ initialMode?: 'login' | 'signup' }>();
+    type Mode = 'login' | 'signup';
 
-    let mode: 'login' | 'signup' = $state('login');
+    const { initialMode = 'login' } = $props<{ initialMode?: Mode }>();
+
+    let mode = $state<Mode>('login');
 
     $effect(() => {
         mode = initialMode;
     });
     let email = $state('');
     let password = $state('');
+    let confirmPassword = $state('');
+    let showPassword = $state(false);
     let loading = $state(false);
     let error = $state('');
     let message = $state('');
+    let touched = $state({ email: false, password: false, confirm: false });
+    let shaking = $state(false);
 
-    function getFriendlyAuthError(err: unknown): string {
-        const fallback = 'Une erreur est survenue';
-        const rawMessage = err instanceof Error ? err.message : fallback;
+    let emailInput = $state<HTMLInputElement>();
+    let passwordInput = $state<HTMLInputElement>();
+    let confirmInput = $state<HTMLInputElement>();
 
-        if (rawMessage.includes('Password should contain at least one character of each')) {
-            return 'Le mot de passe est trop faible. Utilisez au moins une majuscule, une minuscule, un chiffre et un symbole.';
-        }
+    const isSignup = $derived(mode === 'signup');
+    const emailValid = $derived(isValidEmail(email));
+    const passwordCheck = $derived(checkPassword(password));
+    const passwordsMatch = $derived(confirmPassword.length > 0 && confirmPassword === password);
 
-        return rawMessage;
+    // Les erreurs n'apparaissent qu'une fois le champ quitté (ou au submit), puis se mettent à jour en direct
+    const emailError = $derived(
+        !touched.email || emailValid
+            ? ''
+            : email.trim()
+                ? 'Adresse courriel invalide.'
+                : 'Entrez votre adresse courriel.'
+    );
+    const passwordError = $derived(touched.password && !password ? 'Entrez votre mot de passe.' : '');
+    const passwordInvalid = $derived(touched.password && (!password || (isSignup && !passwordCheck.isValid)));
+    const confirmError = $derived(
+        !isSignup || !touched.confirm || passwordsMatch
+            ? ''
+            : confirmPassword
+                ? 'Les mots de passe ne correspondent pas.'
+                : 'Confirmez votre mot de passe.'
+    );
+    const formValid = $derived(
+        emailValid && (isSignup ? passwordCheck.isValid && passwordsMatch : password.length > 0)
+    );
+
+    function focusFirstInvalid() {
+        if (!emailValid) emailInput?.focus();
+        else if (isSignup ? !passwordCheck.isValid : !password) passwordInput?.focus();
+        else confirmInput?.focus();
     }
 
     async function handleAuth() {
-        loading = true;
         error = '';
         message = '';
+        touched = { email: true, password: true, confirm: true };
 
+        if (!formValid) {
+            shaking = true;
+            focusFirstInvalid();
+            return;
+        }
+
+        loading = true;
         try {
-            if (mode === 'signup') {
-                const { data, error: signupError } = await supabase.auth.signUp({
-                    email,
-                    password,
-                });
-
-                if (signupError) throw signupError;
-
-                if (data.user) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    
-                    const response = await fetch('/api/auth/signup', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.error || 'Erreur lors de la création du compte');
-                    }
-                } else {
-                    throw new Error('Impossible de créer le compte utilisateur');
-                }
-
-                message = 'Inscription réussie. Vous pouvez maintenant vous connecter.';
-                setTimeout(() => {
-                    mode = 'login';
-                    message = '';
-                }, 2000);
-            } else {
-                const { error: loginError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-
-                if (loginError) throw loginError;
-
-                const {
-                    data: { session }
-                } = await supabase.auth.getSession();
-
-                if (!session) {
-                    throw new Error('Session non disponible après connexion. Veuillez réessayer.');
-                }
-
-                window.location.replace('/');
-                return;
-            }
+            const redirecting = isSignup ? await signUp() : await signIn();
+            // On garde l'état de chargement jusqu'au rechargement de la page
+            if (redirecting) return;
         } catch (err) {
             error = getFriendlyAuthError(err);
-        } finally {
-            loading = false;
+            shaking = true;
         }
+        loading = false;
     }
 
-    function toggleMode() {
-        mode = mode === 'login' ? 'signup' : 'login';
+    async function signUp(): Promise<boolean> {
+        const { data, error: signupError } = await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+        });
+
+        if (signupError) throw signupError;
+        if (!data.user) throw new Error('Impossible de créer le compte utilisateur');
+
+        // Supabase renvoie un utilisateur sans identité quand le courriel est déjà inscrit
+        if (data.user.identities?.length === 0) {
+            throw new Error('Un compte existe déjà avec cette adresse courriel.');
+        }
+
+        // Confirmation par courriel requise : le compte TradeLab sera créé à la première connexion (GET /api/account)
+        if (!data.session) {
+            switchMode('login');
+            message = `Un lien de confirmation a été envoyé à ${email.trim()}. Validez-le, puis connectez-vous.`;
+            return false;
+        }
+
+        const response = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Erreur lors de la création du compte');
+        }
+
+        window.location.replace('/');
+        return true;
+    }
+
+    async function signIn(): Promise<boolean> {
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+        });
+
+        if (loginError) throw loginError;
+
+        const {
+            data: { session }
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+            throw new Error('Session non disponible après connexion. Veuillez réessayer.');
+        }
+
+        window.location.replace('/');
+        return true;
+    }
+
+    function switchMode(next: Mode) {
+        if (mode === next) return;
+        mode = next;
         error = '';
         message = '';
+        confirmPassword = '';
+        touched = { email: false, password: false, confirm: false };
     }
 </script>
 
@@ -149,7 +202,7 @@
                 <button
                     class="mode-tab"
                     class:active={mode === 'login'}
-                    onclick={() => mode !== 'login' && toggleMode()}
+                    onclick={() => switchMode('login')}
                     type="button"
                     role="tab"
                     aria-selected={mode === 'login'}
@@ -159,7 +212,7 @@
                 <button
                     class="mode-tab"
                     class:active={mode === 'signup'}
-                    onclick={() => mode !== 'signup' && toggleMode()}
+                    onclick={() => switchMode('signup')}
                     type="button"
                     role="tab"
                     aria-selected={mode === 'signup'}
@@ -168,53 +221,157 @@
                 </button>
             </div>
 
-            <form class="auth-form" onsubmit={(event) => { event.preventDefault(); handleAuth(); }}>
-                <label class="field">
-                    <span>Adresse courriel</span>
-                    <input
-                        type="email"
-                        autocomplete="email"
-                        placeholder="exemple@tradelab.com"
-                        bind:value={email}
-                        required
-                        disabled={loading}
-                    />
-                </label>
+            <form
+                class="auth-form"
+                class:shake={shaking}
+                novalidate
+                onsubmit={(event) => { event.preventDefault(); handleAuth(); }}
+                onanimationend={(event) => { if (event.target === event.currentTarget) shaking = false; }}
+            >
+                <div class="field" class:invalid={!!emailError}>
+                    <label for="auth-email">Adresse courriel</label>
+                    <div class="input-wrap">
+                        <input
+                            id="auth-email"
+                            bind:this={emailInput}
+                            type="email"
+                            autocomplete="email"
+                            placeholder="exemple@tradelab.com"
+                            bind:value={email}
+                            onblur={() => { if (email) touched.email = true; }}
+                            disabled={loading}
+                            aria-invalid={!!emailError}
+                            aria-describedby={emailError ? 'auth-email-error' : undefined}
+                        />
+                        {#if emailValid}
+                            <span class="input-icon valid" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                            </span>
+                        {/if}
+                    </div>
+                    {#if emailError}
+                        <p id="auth-email-error" class="field-error" transition:slide={{ duration: 180 }}>{emailError}</p>
+                    {/if}
+                </div>
 
-                <label class="field">
-                    <span>Mot de passe</span>
-                    <input
-                        type="password"
-                        autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
-                        placeholder="Votre mot de passe"
-                        bind:value={password}
-                        required
-                        disabled={loading}
-                        minlength="6"
-                    />
-                </label>
+                <div class="field" class:invalid={passwordInvalid}>
+                    <label for="auth-password">Mot de passe</label>
+                    <div class="input-wrap">
+                        <input
+                            id="auth-password"
+                            bind:this={passwordInput}
+                            type={showPassword ? 'text' : 'password'}
+                            autocomplete={isSignup ? 'new-password' : 'current-password'}
+                            placeholder={isSignup ? 'Créez un mot de passe' : 'Votre mot de passe'}
+                            bind:value={password}
+                            onblur={() => { if (password) touched.password = true; }}
+                            disabled={loading}
+                            aria-invalid={passwordInvalid}
+                            aria-describedby={isSignup ? 'auth-password-rules' : passwordError ? 'auth-password-error' : undefined}
+                        />
+                        <button
+                            type="button"
+                            class="toggle-visibility"
+                            onclick={() => (showPassword = !showPassword)}
+                            aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                            aria-pressed={showPassword}
+                            disabled={loading}
+                        >
+                            {#if showPassword}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18" /><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2" /><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></svg>
+                            {:else}
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+                            {/if}
+                        </button>
+                    </div>
+                    {#if passwordError}
+                        <p id="auth-password-error" class="field-error" transition:slide={{ duration: 180 }}>{passwordError}</p>
+                    {/if}
+
+                    {#if isSignup}
+                        <div class="password-meter" transition:slide={{ duration: 220 }}>
+                            <div class="strength" data-score={passwordCheck.strength.score}>
+                                <div class="strength-bars" aria-hidden="true">
+                                    {#each [1, 2, 3, 4] as level (level)}
+                                        <span class="strength-bar" class:filled={passwordCheck.strength.score >= level}></span>
+                                    {/each}
+                                </div>
+                                <span class="strength-label" aria-live="polite">
+                                    {passwordCheck.strength.label || 'Sécurité'}
+                                </span>
+                            </div>
+                            <ul id="auth-password-rules" class="password-rules">
+                                {#each passwordCheck.rules as rule (rule.id)}
+                                    <li class:passed={rule.passed} class:missed={touched.password && !rule.passed}>
+                                        <span class="rule-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                                        </span>
+                                        {rule.label}
+                                        <span class="sr-only">{rule.passed ? '(respecté)' : '(manquant)'}</span>
+                                    </li>
+                                {/each}
+                            </ul>
+                        </div>
+                    {/if}
+                </div>
+
+                {#if isSignup}
+                    <div class="field" class:invalid={!!confirmError} transition:slide={{ duration: 220 }}>
+                        <label for="auth-confirm">Confirmer le mot de passe</label>
+                        <div class="input-wrap">
+                            <input
+                                id="auth-confirm"
+                                bind:this={confirmInput}
+                                type={showPassword ? 'text' : 'password'}
+                                autocomplete="new-password"
+                                placeholder="Retapez votre mot de passe"
+                                bind:value={confirmPassword}
+                                onblur={() => { if (confirmPassword) touched.confirm = true; }}
+                                disabled={loading}
+                                aria-invalid={!!confirmError}
+                                aria-describedby={confirmError ? 'auth-confirm-error' : undefined}
+                            />
+                            {#if passwordsMatch}
+                                <span class="input-icon valid" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                                </span>
+                            {/if}
+                        </div>
+                        {#if confirmError}
+                            <p id="auth-confirm-error" class="field-error" transition:slide={{ duration: 180 }}>{confirmError}</p>
+                        {/if}
+                    </div>
+                {/if}
 
                 {#if error}
-                    <div class="form-alert error" role="status">{error}</div>
+                    <div class="form-alert error" role="alert">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 7.5v5.5" /><path d="M12 16.5h.01" /></svg>
+                        <span>{error}</span>
+                    </div>
                 {/if}
 
                 {#if message}
-                    <div class="form-alert success" role="status">{message}</div>
+                    <div class="form-alert success" role="status">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 6.5l8.5 6.5 8.5-6.5" /></svg>
+                        <span>{message}</span>
+                    </div>
                 {/if}
 
-                <button class="submit-btn" type="submit" disabled={loading}>
-                    {loading
-                        ? 'Chargement...'
-                        : mode === 'login'
-                            ? 'Se connecter'
-                            : 'Créer mon compte'}
+                <button class="submit-btn" type="submit" disabled={loading} aria-busy={loading}>
+                    {#if loading}
+                        <span class="spinner" aria-hidden="true"></span>
+                        {isSignup ? 'Création du compte…' : 'Connexion…'}
+                    {:else}
+                        {isSignup ? 'Créer mon compte' : 'Se connecter'}
+                    {/if}
                 </button>
             </form>
 
-            <p style="text-align: center" class="card-footer">
-                {mode === 'login'
-                    ? 'Pas de compte?  Inscrivez-vous.'
-                        : 'Déjà un compte? Connectez-vous.'}
+            <p class="card-footer">
+                {isSignup ? 'Déjà un compte?' : 'Pas de compte?'}
+                <button type="button" class="link-btn" onclick={() => switchMode(isSignup ? 'login' : 'signup')}>
+                    {isSignup ? 'Connectez-vous.' : 'Inscrivez-vous.'}
+                </button>
             </p>
         </section>
     </div>
@@ -430,12 +587,20 @@
         color: rgba(226, 232, 240, 0.72);
     }
 
+    .input-wrap {
+        position: relative;
+    }
+
     .field input {
-        padding: 0.85rem 1rem;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.85rem 2.9rem 0.85rem 1rem;
         border-radius: 12px;
         border: 1px solid rgba(148, 163, 184, 0.3);
         background: rgba(15, 23, 42, 0.5);
         color: #f8fafc;
+        font: inherit;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
     }
 
     .field input:focus {
@@ -444,10 +609,253 @@
         box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
     }
 
+    .field.invalid input {
+        border-color: rgba(248, 113, 113, 0.65);
+        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.1);
+    }
+
+    .field.invalid input:focus {
+        border-color: rgba(248, 113, 113, 0.85);
+        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+    }
+
+    .field-error {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #fca5a5;
+        font-size: 0.82rem;
+    }
+
+    .field-error::before {
+        content: '';
+        flex: none;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #f87171;
+        box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+    }
+
+    .input-icon,
+    .toggle-visibility {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        display: grid;
+        place-items: center;
+    }
+
+    .input-icon {
+        right: 0.85rem;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: linear-gradient(140deg, #38bdf8, #22c55e);
+        color: #031b2a;
+        pointer-events: none;
+        animation: pop 0.25s ease;
+    }
+
+    .input-icon svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    .toggle-visibility {
+        right: 0.4rem;
+        width: 2.2rem;
+        height: 2.2rem;
+        border: none;
+        border-radius: 10px;
+        background: transparent;
+        color: rgba(226, 232, 240, 0.55);
+        cursor: pointer;
+        transition: color 0.2s ease, background 0.2s ease;
+    }
+
+    .toggle-visibility:hover:not(:disabled) {
+        color: #f8fafc;
+        background: rgba(148, 163, 184, 0.12);
+    }
+
+    .toggle-visibility:focus-visible {
+        outline: 2px solid rgba(56, 189, 248, 0.6);
+        outline-offset: 1px;
+    }
+
+    .toggle-visibility svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .password-meter {
+        display: grid;
+        gap: 0.8rem;
+        margin-top: 0.15rem;
+        padding: 0.9rem 1rem;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .strength {
+        --strength-color: rgba(148, 163, 184, 0.4);
+        --strength-text: rgba(226, 232, 240, 0.5);
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+    }
+
+    .strength[data-score='1'] {
+        --strength-color: #f87171;
+        --strength-text: #fca5a5;
+    }
+
+    .strength[data-score='2'] {
+        --strength-color: #fbbf24;
+        --strength-text: #fde68a;
+    }
+
+    .strength[data-score='3'] {
+        --strength-color: #4ade80;
+        --strength-text: #86efac;
+    }
+
+    .strength[data-score='4'] {
+        --strength-color: linear-gradient(90deg, #38bdf8, #22c55e);
+        --strength-text: #7dd3fc;
+    }
+
+    .strength-bars {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.35rem;
+    }
+
+    .strength-bar {
+        position: relative;
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.16);
+        overflow: hidden;
+    }
+
+    .strength-bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: var(--strength-color);
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .strength-bar.filled::after {
+        transform: scaleX(1);
+    }
+
+    .strength-label {
+        min-width: 4.8rem;
+        text-align: right;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--strength-text);
+        transition: color 0.25s ease;
+    }
+
+    .password-rules {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem 0.75rem;
+    }
+
+    .password-rules li {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.82rem;
+        color: rgba(226, 232, 240, 0.6);
+        transition: color 0.2s ease;
+    }
+
+    .password-rules li.passed {
+        color: #bbf7d0;
+    }
+
+    .password-rules li.missed {
+        color: #fca5a5;
+    }
+
+    .rule-icon {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        border: 1.5px solid rgba(148, 163, 184, 0.35);
+        color: #031b2a;
+        transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+    }
+
+    .rule-icon svg {
+        width: 11px;
+        height: 11px;
+        stroke-dasharray: 24;
+        stroke-dashoffset: 24;
+        transition: stroke-dashoffset 0.3s ease 0.05s;
+    }
+
+    .password-rules li.passed .rule-icon {
+        background: linear-gradient(140deg, #38bdf8, #22c55e);
+        border-color: transparent;
+        transform: scale(1.06);
+    }
+
+    .password-rules li.passed .rule-icon svg {
+        stroke-dashoffset: 0;
+    }
+
+    .password-rules li.missed .rule-icon {
+        border-color: rgba(248, 113, 113, 0.7);
+    }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
     .form-alert {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
         padding: 0.75rem 1rem;
         border-radius: 12px;
         font-size: 0.9rem;
+        animation: fadeInUp 0.3s ease;
+    }
+
+    .form-alert svg {
+        flex: none;
+        width: 18px;
+        height: 18px;
+        margin-top: 1px;
     }
 
     .form-alert.error {
@@ -463,6 +871,10 @@
     }
 
     .submit-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
         padding: 0.9rem 1.2rem;
         border-radius: 12px;
         border: none;
@@ -483,9 +895,78 @@
         box-shadow: 0 12px 24px rgba(15, 23, 42, 0.4);
     }
 
+    .spinner {
+        width: 16px;
+        height: 16px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        border: 2px solid rgba(3, 27, 42, 0.25);
+        border-top-color: #031b2a;
+        animation: spin 0.7s linear infinite;
+    }
+
     .card-footer {
         margin-top: 1.25rem;
+        text-align: center;
         color: rgba(226, 232, 240, 0.7);
+    }
+
+    .link-btn {
+        border: none;
+        background: none;
+        padding: 0;
+        font: inherit;
+        font-weight: 600;
+        color: #7dd3fc;
+        cursor: pointer;
+    }
+
+    .link-btn:hover {
+        text-decoration: underline;
+    }
+
+    .auth-form.shake {
+        animation: shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+    }
+
+    @keyframes shake {
+        10%, 90% {
+            transform: translateX(-1px);
+        }
+        20%, 80% {
+            transform: translateX(2px);
+        }
+        30%, 50%, 70% {
+            transform: translateX(-5px);
+        }
+        40%, 60% {
+            transform: translateX(5px);
+        }
+    }
+
+    @keyframes pop {
+        from {
+            transform: translateY(-50%) scale(0.4);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(-50%) scale(1);
+            opacity: 1;
+        }
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .auth-form.shake,
+        .input-icon,
+        .form-alert {
+            animation: none;
+        }
     }
 
     .stagger-1 {
@@ -540,6 +1021,12 @@
 
         .auth-card {
             padding: 2rem;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .password-rules {
+            grid-template-columns: 1fr;
         }
     }
 </style>

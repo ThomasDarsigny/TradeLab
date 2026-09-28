@@ -7,7 +7,7 @@ export const POST: RequestHandler = async ({ locals }) => {
         const { session } = await locals.safeGetSession();
 
         if (!session) {
-            return json({ error: 'Vérifiez vos couriels' }, { status: 401 });
+            return json({ error: 'Vérifiez vos courriels' }, { status: 401 });
         }
 
         const existingAccount = await getAccount(session.user.id, locals.supabase);
