@@ -4,7 +4,7 @@ venv/
 .venv/
 
 # Configuration sensible
-backend/config/proxy_config.py
+TradeLab/backend/config/proxy_config.py
 .env
 .env.*
 !.env.example
@@ -22,7 +22,7 @@ __pycache__/
 .netlify/
 .wrangler/
 .svelte-kit/
-/build/
+TradeLab/build/
 dist/
 
 # OS
