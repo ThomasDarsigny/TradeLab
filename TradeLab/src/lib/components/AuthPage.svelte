@@ -14,6 +14,17 @@
     let error = $state('');
     let message = $state('');
 
+    function getFriendlyAuthError(err: unknown): string {
+        const fallback = 'Une erreur est survenue';
+        const rawMessage = err instanceof Error ? err.message : fallback;
+
+        if (rawMessage.includes('Password should contain at least one character of each')) {
+            return 'Le mot de passe est trop faible. Utilisez au moins une majuscule, une minuscule, un chiffre et un symbole.';
+        }
+
+        return rawMessage;
+    }
+
     async function handleAuth() {
         loading = true;
         error = '';
@@ -70,7 +81,7 @@
                 return;
             }
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Une erreur est survenue';
+            error = getFriendlyAuthError(err);
         } finally {
             loading = false;
         }
