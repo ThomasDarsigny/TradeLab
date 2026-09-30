@@ -199,6 +199,61 @@
 	color: var(--text-muted);
 }
 
+/* Cartes squelettes affichées pendant l'arrivée des articles */
+.news-card.skeleton {
+	pointer-events: none;
+}
+
+.skeleton-block,
+.skeleton-line {
+	background: linear-gradient(90deg, var(--bg-tertiary) 25%, rgba(148, 163, 184, 0.14) 50%, var(--bg-tertiary) 75%);
+	background-size: 200% 100%;
+	animation: news-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line {
+	display: block;
+	width: 100%;
+	height: 0.85rem;
+	margin-bottom: 0.65rem;
+	border-radius: 6px;
+}
+
+.skeleton-line.medium {
+	width: 75%;
+}
+
+.skeleton-line.short {
+	width: 45%;
+	margin-bottom: 1.25rem;
+}
+
+.skeleton-line.tiny {
+	width: 5.5rem;
+	height: 0.7rem;
+	margin: 0;
+}
+
+.skeleton .card-meta {
+	margin-top: auto;
+}
+
+@keyframes news-shimmer {
+	from {
+		background-position: 200% 0;
+	}
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.skeleton-block,
+	.skeleton-line {
+		animation: none;
+	}
+}
+
 @media (max-width: 640px) {
 	.category-switch {
 		flex-direction: column;

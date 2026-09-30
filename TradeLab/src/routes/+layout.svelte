@@ -5,7 +5,7 @@
 	import { setAccount, clearAccount } from "$lib/stores/account";
 	import { goto, invalidateAll } from "$app/navigation";
 	import { onMount } from "svelte";
-	import { page } from "$app/stores";
+	import { page, navigating } from "$app/stores";
 
 	let { children } = $props();
 	let userEmail = $state<string | null>(null);
@@ -490,6 +490,9 @@
 <svelte:window onclick={handleClickOutside} />
 
 <div class="app">
+	{#if $navigating}
+		<div class="nav-progress" aria-hidden="true"></div>
+	{/if}
 	{#if showHeader}
 		<header class="app-header">
 			<a href="/" class="brand">
@@ -988,6 +991,51 @@
 </div>
 
 <style>
+	/* Barre de navigation en cours : n'apparaît qu'après 150 ms pour ne pas clignoter */
+	.nav-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: 9999;
+		height: 3px;
+		overflow: hidden;
+		pointer-events: none;
+		opacity: 0;
+		animation: nav-progress-in 0.2s ease 0.15s forwards;
+	}
+
+	.nav-progress::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		width: 40%;
+		background: linear-gradient(90deg, transparent, var(--accent-primary), #22c55e);
+		animation: nav-progress-slide 1.1s ease-in-out infinite;
+	}
+
+	@keyframes nav-progress-in {
+		to {
+			opacity: 1;
+		}
+	}
+
+	@keyframes nav-progress-slide {
+		from {
+			transform: translateX(-100%);
+		}
+		to {
+			transform: translateX(250%);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.nav-progress::before {
+			width: 100%;
+			animation: none;
+		}
+	}
+
 	.profile-dropdown {
 		position: relative;
 		margin-left: 1rem;

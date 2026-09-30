@@ -1,7 +1,8 @@
 <script lang="ts">
 	import './+page.css';
-	let { data } = $props<{ data: any }>();
-	let activeTab = $state('gnews');
+	import type { PageData } from './$types';
+	let { data } = $props<{ data: PageData }>();
+	let activeTab = $state<'gnews' | 'finnhub'>('gnews');
 
 	function getRelativeTime(dateString: string): string {
 		const date = new Date(dateString);
@@ -37,9 +38,11 @@
 				aria-selected={activeTab === 'gnews'}
 			>
 				Bourse
-				{#if data.gnews.success}
-					<span class="badge">{data.gnews.articles.length}</span>
-				{/if}
+				{#await data.gnews then gnews}
+					{#if gnews.success}
+						<span class="badge">{gnews.articles.length}</span>
+					{/if}
+				{/await}
 			</button>
 			<button
 				class="tab-btn {activeTab === 'finnhub' ? 'active' : ''}"
@@ -48,87 +51,74 @@
 				aria-selected={activeTab === 'finnhub'}
 			>
 				Crypto
-				{#if data.finnhub.success}
-					<span class="badge">{data.finnhub.articles.length}</span>
-				{/if}
+				{#await data.finnhub then finnhub}
+					{#if finnhub.success}
+						<span class="badge">{finnhub.articles.length}</span>
+					{/if}
+				{/await}
 			</button>
 		</div>
 	</div>
 
-	{#if data.success}
-		<div class="news-grid">
-			{#if activeTab === 'gnews' && data.gnews.success}
-				{#each data.gnews.articles as article}
-					<article class="news-card">
-						{#if article.image}
-							<div class="card-image">
-								<img src={article.image} alt={article.title} loading="lazy" />
-							</div>
-						{/if}
-						<div class="card-content">
-							<h3>
-								<a href={article.url} target="_blank" rel="noreferrer">
-									{article.title}
-								</a>
-							</h3>
-							{#if article.description}
-								<p class="description">{article.description}</p>
-							{/if}
-							<div class="card-meta">
-								<span class="source">{article.source ?? 'Source inconnue'}</span>
-								{#if article.publishedAt}
-									<span class="date">
-										{new Date(article.publishedAt).toLocaleString('fr-CA')}
-									</span>
-								{/if}
-							</div>
+	{#await activeTab === 'gnews' ? data.gnews : data.finnhub}
+		<div class="news-grid" aria-busy="true" aria-label="Chargement des actualités">
+			{#each { length: 6 }}
+				<div class="news-card skeleton" aria-hidden="true">
+					<div class="card-image skeleton-block"></div>
+					<div class="card-content">
+						<span class="skeleton-line"></span>
+						<span class="skeleton-line medium"></span>
+						<span class="skeleton-line short"></span>
+						<div class="card-meta">
+							<span class="skeleton-line tiny"></span>
+							<span class="skeleton-line tiny"></span>
 						</div>
-					</article>
-				{/each}
-			{:else if activeTab === 'finnhub' && data.finnhub.success}
-				{#each data.finnhub.articles as article}
-					<article class="news-card">
-						{#if article.image}
-							<div class="card-image">
-								<img src={article.image} alt={article.title} loading="lazy" />
-							</div>
-						{/if}
-						<div class="card-content">
-							<h3>
-								<a href={article.url} target="_blank" rel="noreferrer">
-									{article.title}
-								</a>
-							</h3>
-							{#if article.description}
-								<p class="description">{article.description}</p>
-							{/if}
-							<div class="card-meta">
-								<span class="source">{article.source ?? 'Source inconnue'}</span>
-								{#if article.publishedAt}
-									<span class="date">
-										{new Date(article.publishedAt).toLocaleString('fr-CA')}
-									</span>
-								{/if}
-							</div>
-						</div>
-					</article>
-				{/each}
-			{:else}
-				<div class="error-message">
-					<p>Source non disponible</p>
+					</div>
 				</div>
-			{/if}
+			{/each}
 		</div>
-	{:else}
-		<div class="error-container">
-			<h2>Impossible de charger les actualités</h2>
-			{#if data.errors?.length}
+	{:then source}
+		{#if !source.success}
+			<div class="error-container">
+				<h2>Impossible de charger les actualités</h2>
 				<ul>
-					{#each data.errors as err}
-						<li>{err}</li>
-					{/each}
+					<li>{source.error}</li>
 				</ul>
-			{/if}
-		</div>
-	{/if}
+			</div>
+		{:else if source.articles.length === 0}
+			<div class="error-message">
+				<p>Aucune actualité pour le moment.</p>
+			</div>
+		{:else}
+			<div class="news-grid">
+				{#each source.articles as article}
+					<article class="news-card">
+						{#if article.image}
+							<div class="card-image">
+								<img src={article.image} alt={article.title} loading="lazy" />
+							</div>
+						{/if}
+						<div class="card-content">
+							<h3>
+								<a href={article.url} target="_blank" rel="noreferrer">
+									{article.title}
+								</a>
+							</h3>
+							{#if article.description}
+								<p class="description">{article.description}</p>
+							{/if}
+							<div class="card-meta">
+								<span class="source">{article.source ?? 'Source inconnue'}</span>
+								{#if article.publishedAt}
+									<span class="date">
+										{new Date(article.publishedAt).toLocaleString('fr-CA')}
+									</span>
+								{/if}
+							</div>
+						</div>
+					</article>
+				{/each}
+			</div>
+		{/if}
+	{/await}
 </div>
